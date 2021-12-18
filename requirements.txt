@@ -1,0 +1,3 @@
+# Requirements for developers.
+-r requirements/minimal.txt
+-r requirements/test.txt
