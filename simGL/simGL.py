@@ -1,3 +1,6 @@
+import numpy as np
+import tskit
+
 def samples_order(ts):
     so = []
     for ind in ts.individuals():
@@ -76,7 +79,7 @@ def sim_allelereadcounts(data, mean_depth = 30., std_depth = 5., e = 0.05, seed 
     return Rh.reshape(Rh.shape[0], Rh.shape[1]//2, 2, Rh.shape[2]).sum(axis = 2)
 
     
-def allelereadcounts_to_GL(Rg):
+def allelereadcounts_to_GL(Rg, e = 0.05):
     GL = []
     for i in range(4):
         for j in range(i, 4):
