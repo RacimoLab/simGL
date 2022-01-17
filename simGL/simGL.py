@@ -1,5 +1,6 @@
 import numpy as np
 import tskit
+from itertools import combinations_with_replacement
 
 def samples_order(ts):
     so = []
@@ -15,32 +16,30 @@ def extract_genotype_matrix(data):
     else:
         sys.exit("Incorrect data format")
 
-def depth_per_haplotype(rng, mean_depth, std_depth, n_ind):
-    if type(mean_depth) == int or type(mean_depth) == float:
+def depth_per_haplotype(rng, mean_depth, std_depth, n_hap, ploidy):
+    if (type(mean_depth) == int or type(mean_depth) == float) and mean_depth > 0.0:
         if type(std_depth) == int or type(std_depth) == float:
             DPh = []
-            while len(DPh) < n_ind:
-                dp = rng.normal(loc = mean_depth/2, scale = std_depth, size=1)[0]
+            while len(DPh) < n_hap:
+                dp = rng.normal(loc = mean_depth/ploidy, scale = std_depth, size=1)[0]
                 if dp > 0:
                     DPh.append(dp)
             return DPh
-    elif type(mean_depth) == np.ndarray and len(mean_depth.shape) == 1 and mean_depth.shape[0] == n_ind and (mean_depth > 0).sum() == n_ind:
+    elif type(mean_depth) == np.ndarray and len(mean_depth.shape) == 1 and mean_depth.shape[0] == n_hap and (mean_depth > 0).sum() == n_hap:
         return mean_depth
     else:
-        sys.exit("Incorrect mean_depth format")
+        raise Exception('Incorrect mean_depth format')
         
         
-def sim_allelereadcounts(data, mean_depth = 30., std_depth = 5., e = 0.05, seed = 1234):
+def sim_allelereadcounts(data, mean_depth = 30., std_depth = 5., e = 0.05, ploidy = 2, seed = 1234):
     '''
     Def:
         Function to simulate read counts for alleles given a tree sequence data from diploid simulated individuals (2samples = ind) 
         or genotype matrix and extra information for the haplotype samples.
     Input:
-        - data       : Two inputs are possible:
-                            + Tree sequence data from tskit package from which the genotype matrix is going to be extracted
-                            + Genotype matrix in numpy format with shape (SNPs, samples). It is assumed that the array is sorted
-                              according to a individual order such that consecutive columns (e.g., data[:, 0] and data[:, 1]) 
-                              correspond to the same individual.
+        - gm         : Genotype matrix in numpy format with shape (SNPs, samples). It is assumed that the array is sorted
+                       according to a individual order such that consecutive columns (e.g., gm[:, 0] and gm[:, 1]) 
+                       correspond to the same individual.
         - mean_depth : Two inputs are possible:
                             + float > 0 with the mean depth per sample. The mean depth for every sample haplotype 
                               is going to be sampled from a normal distribution with mean = mean_depth and std = std_depth.
@@ -57,6 +56,7 @@ def sim_allelereadcounts(data, mean_depth = 30., std_depth = 5., e = 0.05, seed 
                        going to be sampled. This value will only be used if a float value is inputet for mean_depth. 
         - e          : float between 0 and 1 representing the error rate per base per read per site. This probability is
                        assumed to be constant.
+        - ploidy     : int with the number of haplotypic sequences per individual
         - seed       : integer from which the numpy rng will be drawn. 
     Output:
         - Rg         : numpy array with dimentions (SNP, individual, alleles) so that each value corresponds to the number of
@@ -64,23 +64,23 @@ def sim_allelereadcounts(data, mean_depth = 30., std_depth = 5., e = 0.05, seed 
                        corresponds to 1 : A and ancestral allele, 2 : C and derived allele, 3 : G, 4: T. 
     '''
     rng = np.random.default_rng(seed)
-    M   = extract_genotype_matrix(data)
     #1. Depths per haplotype
-    DPh = depth_per_haplotype(rng, mean_depth, std_depth, M.shape[1])
+    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1], ploidy)
     #2. Sample depths per SNP per haplotype
-    DP  = rng.poisson(DPh, size=M.shape)
+    DP  = rng.poisson(DPh, size=gm.shape)
     #3. Sample correct and error reads per SNP per haplotype (Rh)
     Rh  = np.array([rng.multinomial(dp, [1-e, e/3, e/3, e/3]).tolist() for dp in DP.reshape(-1)])
     Rh  = Rh.reshape(DP.shape[0], DP.shape[1], 4)
     #4. Reorganize anc and der alleles and join haplotypes to form individuals
     Rh_copy = np.copy(Rh)
-    Rh[M == 1, 1] = Rh_copy[M == 1, 0]
-    Rh[M == 1, 0] = Rh_copy[M == 1, 1]
-    return Rh.reshape(Rh.shape[0], Rh.shape[1]//2, 2, Rh.shape[2]).sum(axis = 2)
+    Rh[gm == 1, 1] = Rh_copy[gm == 1, 0]
+    Rh[gm == 1, 0] = Rh_copy[gm == 1, 1]
+    return Rh.reshape(Rh.shape[0], Rh.shape[1]//ploidy, ploidy, Rh.shape[2]).sum(axis = 2)
 
     
 def allelereadcounts_to_GL(Rg, e = 0.05):
     GL = []
+    
     for i in range(4):
         for j in range(i, 4):
             if i == j:
@@ -91,6 +91,44 @@ def allelereadcounts_to_GL(Rg, e = 0.05):
                 GL.append(-np.log(np.power(((1-e)/2 + (e/3)/2), Rg[:, :, i]+Rg[:, :, j]) * 
                                   np.power(((e/3)/2 + (e/3)/2), Rg.sum(axis = 2)-Rg[:, :, i]-Rg[:, :, j])))
 
-    GL = np.array(GL)
-    return GL - GL.min(axis = 0)
+    GL = np.array(GL).transpose(1, 2, 0)
+    return GL - GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
 
+def allelereadcounts_to_pileup(allelereadcounts, filename = "tmp/reads.pileup"):
+    with open(filename, "w") as out:
+        first_line = True
+        for i in range(allelereadcounts.shape[0]):
+            line = "1\t"+str(i+1)+"\tN"
+            for j in range(allelereadcounts.shape[1]):
+                nreads = allelereadcounts[i, j, :].sum()
+                line = line+"\t"+str(nreads)+"\t"
+                if nreads:
+                    for c, b in zip(allelereadcounts[i, j, :], ["A", "C", "G", "T"]):
+                        line = line+c*b
+                    line = line+"\t"+"."*nreads
+                else:
+                    line = line+"\t*\t*"
+            out.write(line+"\n")
+
+def create_fasta(length = 100_000, filename = "tmp/fasta.fa"):
+    with open(filename, "w") as fasta:
+        fasta.write(">1\n")
+        for i in range(0, length, 50):
+            fasta.write("{}\n".format("A"*50))
+    
+def read_angsd_gl(file = "tmp/angsdput.glf"):
+    angsd_gl = []
+    with open(file, "r") as f:
+        for line in f:
+            angsd_gl.append(np.array(line.strip().split()[2:]).reshape(5, 10).astype(np.float64).tolist())
+    return -np.array(angsd_gl)
+
+def msqrd(a, b):
+    return np.power(a-b, 2).sum()/a.size
+
+def allelereadcounts_to_vGL(allelereadcounts, e, ploidy = 2):
+    GTxploidy    = np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
+    AFxGTxploidy = np.array([(GTxploidy == 0).sum(axis = 1), (GTxploidy == 1).sum(axis = 1), (GTxploidy == 2).sum(axis = 1), (GTxploidy == 3).sum(axis = 1)])/ploidy
+    
+    GL_vec = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), allelereadcounts.reshape(allelereadcounts.shape[0], allelereadcounts.shape[1], allelereadcounts.shape[2], 1)).sum(axis = 2)
+    return GL_vec-GL_vec.min(axis = 2).reshape(GL_vec.shape[0], GL_vec.shape[1], 1)

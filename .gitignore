@@ -4,3 +4,4 @@
 .Rprofile
 *.lock
 __pycache__
+notebook/tmp/*
