@@ -1,37 +1,49 @@
 import numpy as np
-import tskit
 from itertools import combinations_with_replacement
 
-def samples_order(ts):
-    so = []
-    for ind in ts.individuals():
-        [so.append(nod) for nod in ind.nodes]
-    return np.array(so)
-
-def extract_genotype_matrix(data):
-    if type(data) == np.ndarray and len(data.shape) == 2:
-        return data
-    elif type(data) == tskit.trees.TreeSequence:
-        return data.genotype_matrix()[:, samples_order(data)]
-    else:
-        sys.exit("Incorrect data format")
+def incorporate_monomorphic(poly_gm, pos, start, end):
+    '''
+    Def:
+        Function to incorporate monomorphic sites in a polymorphic genotype matrix. 
+    Input:
+        - poly_gm : numpy array genotype matrix with size (SNPs, haplotypic samples) in which 0 denotes ancestral or reference allele
+                    and 1 denotes derived or alternative allele.
+        - pos     : numpy array with size (SNPs, ) with the discrete numeric coordinate position (int or float) of the polymorphisms
+                    in poly_gm and with the same order.
+        - start   : int >= 0 <= min(pos) that denote the start coordinate of the region simulated.
+        - end     : int >= max(pos) that denote the end coordinate of the region simulated.
+    '''
+    if not (isinstance(start, int) and isinstance(end, int) and start >= 0 and start <= min(pos)):
+        raise TypeError('Incorrect "start" format: it has to be an integer value >=0 and <= min(pos) ') 
+    if not end >= max(pos):
+        raise TypeError('Incorrect "end" format: it has to be an integer value >= max(pos)') 
+    if not (isinstance(poly_gm, np.ndarray) and len(poly_gm.shape) == 2):
+        raise TypeError('Incorrect "poly_gm" format: it has to be a numpy array with dimentions (SNP, haplotypic samples) ') 
+    if not (isinstance(pos, np.ndarray) and len(pos.shape) == 1):
+        raise TypeError('Incorrect "pos" format: it has to be a numpy array with dimentions (SNP, ) ')
+    if not (pos.shape[0] == poly_gm.shape[0]):
+        raise TypeError('Incorrect "poly_gm" and/or "pos" format: They must have the same first dimention poly_gm.shape = (x, y) and  pos.shape = (x, )')
+    gm = np.zeros((end-start, poly_gm.shape[1]))
+    gm[pos.astype(int)] = poly_gm
+    return gm
 
 def depth_per_haplotype(rng, mean_depth, std_depth, n_hap, ploidy):
-    if (type(mean_depth) == int or type(mean_depth) == float) and mean_depth > 0.0:
-        if type(std_depth) == int or type(std_depth) == float:
+    if isinstance(mean_depth, (int, float)) and mean_depth > 0.0:
+        if isinstance(std_depth, (int, float)) and std_depth >= 0.0:
             DPh = []
             while len(DPh) < n_hap:
                 dp = rng.normal(loc = mean_depth/ploidy, scale = std_depth, size=1)[0]
                 if dp > 0:
                     DPh.append(dp)
             return DPh
-    elif type(mean_depth) == np.ndarray and len(mean_depth.shape) == 1 and mean_depth.shape[0] == n_hap and (mean_depth > 0).sum() == n_hap:
+        else:
+            raise TypeError('Incorrect "std_depth" format: it has to be a single numeric value (float or int) and >=0 ') 
+    elif isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and mean_depth.shape[0] == n_hap and (mean_depth > 0).sum() == n_hap:
         return mean_depth
     else:
-        raise Exception('Incorrect mean_depth format')
-        
-        
-def sim_allelereadcounts(data, mean_depth = 30., std_depth = 5., e = 0.05, ploidy = 2, seed = 1234):
+        raise TypeError('Incorrect "mean_depth" format: it has to be either a single numeric value (float or int) and >0 or a single-dimention numpy array with length equal to the number of haplotipic samples of the genotype matrix and with all values > 0')
+           
+def sim_allelereadcounts(gm, mean_depth = 30., std_depth = 5., e = 0.05, ploidy = 2, seed = 1234):
     '''
     Def:
         Function to simulate read counts for alleles given a tree sequence data from diploid simulated individuals (2samples = ind) 
@@ -96,7 +108,6 @@ def allelereadcounts_to_GL(Rg, e = 0.05):
 
 def allelereadcounts_to_pileup(allelereadcounts, filename = "tmp/reads.pileup"):
     with open(filename, "w") as out:
-        first_line = True
         for i in range(allelereadcounts.shape[0]):
             line = "1\t"+str(i+1)+"\tN"
             for j in range(allelereadcounts.shape[1]):
