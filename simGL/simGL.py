@@ -1,5 +1,8 @@
 import numpy as np
 from itertools import combinations_with_replacement
+from itertools import combinations
+from scipy.stats import binom
+
 
 def incorporate_monomorphic(poly_gm, pos, start, end):
     '''
@@ -13,9 +16,9 @@ def incorporate_monomorphic(poly_gm, pos, start, end):
         - start   : int >= 0 <= min(pos) that denote the start coordinate of the region simulated.
         - end     : int >= max(pos) that denote the end coordinate of the region simulated.
     '''
-    if not (isinstance(start, int) and isinstance(end, int) and start >= 0 and start <= min(pos)):
+    if not (isinstance(start, (int, float)) and start >= 0 and start <= min(pos)):
         raise TypeError('Incorrect "start" format: it has to be an integer value >=0 and <= min(pos) ') 
-    if not end >= max(pos):
+    if not (isinstance(end, (int, float)) and end >= max(pos)):
         raise TypeError('Incorrect "end" format: it has to be an integer value >= max(pos)') 
     if not (isinstance(poly_gm, np.ndarray) and len(poly_gm.shape) == 2):
         raise TypeError('Incorrect "poly_gm" format: it has to be a numpy array with dimentions (SNP, haplotypic samples) ') 
@@ -23,7 +26,7 @@ def incorporate_monomorphic(poly_gm, pos, start, end):
         raise TypeError('Incorrect "pos" format: it has to be a numpy array with dimentions (SNP, ) ')
     if not (pos.shape[0] == poly_gm.shape[0]):
         raise TypeError('Incorrect "poly_gm" and/or "pos" format: They must have the same first dimention poly_gm.shape = (x, y) and  pos.shape = (x, )')
-    gm = np.zeros((end-start, poly_gm.shape[1]))
+    gm = np.zeros((int(end)-int(start), poly_gm.shape[1]))
     gm[pos.astype(int)] = poly_gm
     return gm
 
@@ -42,8 +45,16 @@ def depth_per_haplotype(rng, mean_depth, std_depth, n_hap, ploidy):
         return mean_depth
     else:
         raise TypeError('Incorrect "mean_depth" format: it has to be either a single numeric value (float or int) and >0 or a single-dimention numpy array with length equal to the number of haplotipic samples of the genotype matrix and with all values > 0')
-           
-def sim_allelereadcounts(gm, mean_depth = 30., std_depth = 5., e = 0.05, ploidy = 2, seed = 1234):
+
+def refalt_int_encoding(gm, ref, alt):
+    refalt_str                    = np.array([ref, alt])
+    refalt_int                    = np.zeros(refalt_str.shape, dtype=int)
+    refalt_int[refalt_str == "C"] = 1
+    refalt_int[refalt_str == "G"] = 2
+    refalt_int[refalt_str == "T"] = 3
+    return refalt_int[gm.reshape(-1), np.repeat(np.arange(gm.shape[0]), gm.shape[1])].reshape(gm.shape)
+
+def sim_allelereadcounts(gm, ref = "", alt = "", mean_depth = 30., std_depth = 5., e = 0.05, ploidy = 2, seed = 1234):
     '''
     Def:
         Function to simulate read counts for alleles given a tree sequence data from diploid simulated individuals (2samples = ind) 
@@ -75,19 +86,29 @@ def sim_allelereadcounts(gm, mean_depth = 30., std_depth = 5., e = 0.05, ploidy 
                        reads with a particular allele for a SNP position and a diploid individual. The index of the 3rd dimention
                        corresponds to 1 : A and ancestral allele, 2 : C and derived allele, 3 : G, 4: T. 
     '''
+    #Checks
+    if not (isinstance(gm, np.ndarray) and len(gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
+        raise TypeError('Incorrect "gm" format: it has to be a numpy array with dimentions (SNP, haplotypic samples) with integer values 1 and 0')
+    if ref == "" and alt == "":
+        ref = np.full(gm.shape[0], "A")
+        alt = np.full(gm.shape[0], "C")
+    elif not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ref.shape[0] == gm.shape[0]):
+        raise TypeError('Incorrect "ref" and/or "alt" format: they have to be a numpy array with dimentions (SNP, ) with string "A", "C", "G", "T" values')
+    #Variables
+    err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
-    #1. Depths per haplotype
+    #1. Depths (DP) per haplotype (h)
     DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1], ploidy)
-    #2. Sample depths per SNP per haplotype
+    #2. Sample depths (DP) per site per haplotype
     DP  = rng.poisson(DPh, size=gm.shape)
     #3. Sample correct and error reads per SNP per haplotype (Rh)
-    Rh  = np.array([rng.multinomial(dp, [1-e, e/3, e/3, e/3]).tolist() for dp in DP.reshape(-1)])
-    Rh  = Rh.reshape(DP.shape[0], DP.shape[1], 4)
-    #4. Reorganize anc and der alleles and join haplotypes to form individuals
-    Rh_copy = np.copy(Rh)
-    Rh[gm == 1, 1] = Rh_copy[gm == 1, 0]
-    Rh[gm == 1, 0] = Rh_copy[gm == 1, 1]
-    return Rh.reshape(Rh.shape[0], Rh.shape[1]//ploidy, ploidy, Rh.shape[2]).sum(axis = 2)
+    #3.1. Convert anc = 0/der = 1 encoded gm into "A" = 0, "C" = 1, "G" = 3, "T" = 4 basepair (bp) encoded gm 
+    gmbp = refalt_int_encoding(gm, ref, alt)
+    #3.2. Simulate allele read counts (ARC) per haplotype (h) per site (s)
+    arc  = rng.multinomial(DP, err[gmbp])
+    #4. Add n haplotype read allele counts (n = ploidy) to obtain read allele counts per genotype
+    return arc.reshape(arc.shape[0], arc.shape[1]//ploidy, ploidy, arc.shape[2]).sum(axis = 2)
+
 
     
 def allelereadcounts_to_GL(Rg, e = 0.05):
@@ -143,3 +164,24 @@ def allelereadcounts_to_vGL(allelereadcounts, e, ploidy = 2):
     
     GL_vec = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), allelereadcounts.reshape(allelereadcounts.shape[0], allelereadcounts.shape[1], allelereadcounts.shape[2], 1)).sum(axis = 2)
     return GL_vec-GL_vec.min(axis = 2).reshape(GL_vec.shape[0], GL_vec.shape[1], 1)
+
+def get_pGTxMm(ploidy = 2):
+    GTxploidy    = np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
+    Mmxploidy    = np.array([list(x) for x in combinations([0, 1, 2, 3], 2)])
+    pGTxMm = []
+    #For every genotype (GT)
+    for i in range(GTxploidy.shape[0]):
+        pGTxMm_tmp = []
+        #For every combination of major (M) and minor (m) alleles (M and m can't be the same allele and there can be only two)
+        for j in range(Mmxploidy.shape[0]):
+            #All alleles in GT are either M or m
+            all_GT_in_Mm = (np.isin(GTxploidy[i],  Mmxploidy[j]).sum() == ploidy)*1
+            #Probability of the genotype given M and m only possible alleles
+            p_GT = binom.pmf((GTxploidy[i] == Mmxploidy[j, 0]).sum(), ploidy, 0.5)
+            pGTxMm_tmp.append( p_GT * all_GT_in_Mm )
+        pGTxMm.append(np.array(pGTxMm_tmp))
+    return np.array(pGTxMm)
+
+def gl_to_Mm(gl, ploidy = 2)
+    pGTxMm = get_pGTxMm(ploidy)
+    return np.argmin((gl.reshape(gl.shape[0], gl.shape[1], gl.shape[2], 1) * pGTxMm.reshape(1, 1, pGTxMm.shape[0], pGTxMm.shape[1])).sum(axis = 2).prod(axis = 1), axis = 1)
