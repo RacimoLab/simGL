@@ -3,48 +3,52 @@ from itertools import combinations_with_replacement
 from itertools import combinations
 from scipy.stats import binom
 
-
 def incorporate_monomorphic(poly_gm, pos, start, end):
     '''
-    Def:
-        Function to incorporate monomorphic sites in a polymorphic genotype matrix. 
-    Input:
-        - poly_gm : numpy array genotype matrix with size (SNPs, haplotypic samples) in which 0 denotes ancestral or reference allele
-                    and 1 denotes derived or alternative allele.
-        - pos     : numpy array with size (SNPs, ) with the discrete numeric coordinate position (int or float) of the polymorphisms
-                    in poly_gm and with the same order.
-        - start   : int >= 0 <= min(pos) that denote the start coordinate of the region simulated.
-        - end     : int >= max(pos) that denote the end coordinate of the region simulated.
+    Incorporates monomorphic sites in a polymorphic genotype matrix.
+
+    Parameters
+    ----------
+    poly_gm : `numpy.ndarray` 
+        Genotype matrix with size (polymorphic sites, haplotypic samples) in which 0 denotes reference allele
+        and 1 denotes alternative allele.
+    pos : `numpy.ndarray` 
+        Genomic coordinates of the polymorphic sites with size (polymorphic sites, ) as integer or float values.
+        The order of these values must be the same as the first dimetion of `poly_gm`.
+    start : `int` or `float`
+        Genomic start coordinate of the range for which monomorphic sites will be incorporated in the original
+        `poly_gm` matrix. The value must be >= 0 <= min(pos).
+    end : `int` or `float`
+        Genomic end coordinate of the range for which monomorphic sites will be incorporated in the original
+        `poly_gm` matrix. The value must be >= max(pos).
+    
+    Returns 
+    -------
+    gm : `numpy.ndarray`
+        Genotype matrix with size (end-start, haplotypic samples) in which 0 denotes reference allele
+        and 1 denotes alternative allele.
     '''
-    if not (isinstance(start, (int, float)) and start >= 0 and start <= min(pos)):
-        raise TypeError('Incorrect "start" format: it has to be an integer value >=0 and <= min(pos) ') 
-    if not (isinstance(end, (int, float)) and end >= max(pos)):
-        raise TypeError('Incorrect "end" format: it has to be an integer value >= max(pos)') 
-    if not (isinstance(poly_gm, np.ndarray) and len(poly_gm.shape) == 2):
-        raise TypeError('Incorrect "poly_gm" format: it has to be a numpy array with dimentions (SNP, haplotypic samples) ') 
+    if not (isinstance(poly_gm, np.ndarray) and len(poly_gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
+        raise TypeError('Incorrect `poly_gm` format: it has to be a numpy array with dimentions (polymorphic sites, haplotypic samples) ') 
     if not (isinstance(pos, np.ndarray) and len(pos.shape) == 1):
-        raise TypeError('Incorrect "pos" format: it has to be a numpy array with dimentions (SNP, ) ')
+        raise TypeError('Incorrect `pos` format: it has to be a numpy array with dimentions (polymorphic sites, ) ')
+    if not (isinstance(start, (int, float)) and start >= 0 and start <= min(pos)):
+        raise TypeError('Incorrect `start` format: it has to be an integer value >=0 and <= min(pos) ') 
+    if not (isinstance(end, (int, float)) and end >= max(pos)):
+        raise TypeError('Incorrect `end` format: it has to be an integer value >= max(pos)') 
     if not (pos.shape[0] == poly_gm.shape[0]):
-        raise TypeError('Incorrect "poly_gm" and/or "pos" format: They must have the same first dimention poly_gm.shape = (x, y) and  pos.shape = (x, )')
+        raise TypeError('Incorrect `poly_gm` and/or `pos` format: They must have the same first dimention poly_gm.shape = (x, y) and  pos.shape = (x, )')
     gm = np.zeros((int(end)-int(start), poly_gm.shape[1]))
     gm[pos.astype(int)] = poly_gm
     return gm
 
-def depth_per_haplotype(rng, mean_depth, std_depth, n_hap, ploidy):
-    if isinstance(mean_depth, (int, float)) and mean_depth > 0.0:
-        if isinstance(std_depth, (int, float)) and std_depth >= 0.0:
-            DPh = []
-            while len(DPh) < n_hap:
-                dp = rng.normal(loc = mean_depth/ploidy, scale = std_depth, size=1)[0]
-                if dp > 0:
-                    DPh.append(dp)
-            return DPh
-        else:
-            raise TypeError('Incorrect "std_depth" format: it has to be a single numeric value (float or int) and >=0 ') 
-    elif isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and mean_depth.shape[0] == n_hap and (mean_depth > 0).sum() == n_hap:
+def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
+    if isinstance(mean_depth, np.ndarray):
         return mean_depth
     else:
-        raise TypeError('Incorrect "mean_depth" format: it has to be either a single numeric value (float or int) and >0 or a single-dimention numpy array with length equal to the number of haplotipic samples of the genotype matrix and with all values > 0')
+        dp = rng.normal(loc = mean_depth, scale = std_depth, size=n_hap)
+        dp[dp < 0.0] = -dp[dp == 0.0]
+        return dp
 
 def refalt_int_encoding(gm, ref, alt):
     refalt_str                    = np.array([ref, alt])
@@ -54,51 +58,84 @@ def refalt_int_encoding(gm, ref, alt):
     refalt_int[refalt_str == "T"] = 3
     return refalt_int[gm.reshape(-1), np.repeat(np.arange(gm.shape[0]), gm.shape[1])].reshape(gm.shape)
 
-def sim_allelereadcounts(gm, ref = "", alt = "", mean_depth = 30., std_depth = 5., e = 0.05, ploidy = 2, seed = 1234):
+def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed, std_depth = None, ref = None, alt = None):
     '''
-    Def:
-        Function to simulate read counts for alleles given a tree sequence data from diploid simulated individuals (2samples = ind) 
-        or genotype matrix and extra information for the haplotype samples.
-    Input:
-        - gm         : Genotype matrix in numpy format with shape (SNPs, samples). It is assumed that the array is sorted
-                       according to a individual order such that consecutive columns (e.g., gm[:, 0] and gm[:, 1]) 
-                       correspond to the same individual.
-        - mean_depth : Two inputs are possible:
-                            + float > 0 with the mean depth per sample. The mean depth for every sample haplotype 
-                              is going to be sampled from a normal distribution with mean = mean_depth and std = std_depth.
-                              Consider that since this script assumes that individuals are diploid, if the user intends to 
-                              simulate a coverage of 30X per individual, the argument should be set to 15.
-                            + numpy array with shape (samples, ) with the mean depth per haplotype sample. All values must 
-                              be > 0. The order of the values is going to be associated to the list of individual's samples
-                              provided by ts.individuals() (in case a tree sequence data is provided) or the order of the
-                              samples in the genotype matrix (if a genotype matrix is provided in the input data).
-                              If the intended coverage per site for a given individual is 30, since the coverage is 
-                              given per haplotype, it should be indicated consecutively and half the individual coverage (15 
-                              and 15 or 14 and 16).
-        - std_depth  : float that corresponds to the standard deviation of the normal distribution from which coverages are
-                       going to be sampled. This value will only be used if a float value is inputet for mean_depth. 
-        - e          : float between 0 and 1 representing the error rate per base per read per site. This probability is
-                       assumed to be constant.
-        - ploidy     : int with the number of haplotypic sequences per individual
-        - seed       : integer from which the numpy rng will be drawn. 
-    Output:
-        - Rg         : numpy array with dimentions (SNP, individual, alleles) so that each value corresponds to the number of
-                       reads with a particular allele for a SNP position and a diploid individual. The index of the 3rd dimention
-                       corresponds to 1 : A and ancestral allele, 2 : C and derived allele, 3 : G, 4: T. 
+    Simulates allele read counts from a genotype matrix. 
+    
+    Parameters
+    ----------
+    gm : `numpy.ndarray` 
+        Genotype matrix with size (sites, haplotypic samples) in which 0 denotes reference allele
+        and 1 denotes alternative allele.
+    
+    mean_depth : `int` or `float` or `numpy.ndarray`
+        Read depth of the each haplotypic sample in `gm`. If a `int` or `float` value is inputed, the function
+        will sample random values from a normal distribution with mean = `mean_depth` and std = `std_depth`.
+        If a `numpy.ndarray` is inputed, the array must have size (haplotypic samples, ) and the order must
+        be the same as the second dimention of `gm`.
+    
+    std_depth : `int` or `float`
+        The standard deviation parameter of the normal distribution from which read depth values are randomly
+        sampled for each haplotypic sample in `gm`. This value only needs to be provided if the `mean_depth`
+        inputed is an `int` or a `float`.
+    
+    e : `float` 
+        Sequencing error probability per base pair per site. The value must be between 0 and 1.
+    
+    ploidy : `int` 
+        Number of haplotypic chromosomes per individual.
+    
+    ref : `numpy.ndarray`, optional
+        Reference alleles list per site. The size of the array must be (sites, ) and the order has to 
+        coincide with the first dimetion of `gm`. The values within the list must be strings {"A", "C", 
+        "G", "T"}. If an `alt` list is inputed, a `ref` list must also be inputed. If no `ref` and `alt`
+        are inputed, the `ref` allele is assumed to be "A" for all sites.
+    
+    alt : `numpy.ndarray`, optional
+        Alternative alleles list per site. The size of the array must be (sites, ) and the order has to 
+        coincide with the first dimetion of `gm`. The values within the list must be strings {"A", "C", 
+        "G", "T"}. If a `ref` list is inputed, an `alt` list must also be inputed. If no `ref` and `alt`
+        are inputed, the `alt` allele is assumed to be "C" for all sites.
+
+    seed : `int`
+        Starting point in generating random numbers. 
+    
+    Returns 
+    -------
+    arc : `numpy.ndarray`
+        Allele read counts per site per individual. The dimentions of the array are (sites, individuals, alleles). 
+        The third dimention of the array has size = 4, which corresponds to the four possible alleles: 0 = "A", 
+        1 = "C", 2 = "G" and 3 = "T".
+    
+    Notes
+    -----
+    - The read depth indicated in `mean_depth` is per haplotypic sample, i.e. if the user intends to simulate a 
+      depth of 30 reads per site per individual, and individuals are diploid (`ploidy` = 2), the `mean_depth` 
+      must be 15. 
+    - If monomorphic sites are included, the `alt` values corresponding to those sites are not taken into account, 
+      but they must be still indicated.
     '''
     #Checks
     if not (isinstance(gm, np.ndarray) and len(gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
-        raise TypeError('Incorrect "gm" format: it has to be a numpy array with dimentions (SNP, haplotypic samples) with integer values 1 and 0')
-    if ref == "" and alt == "":
+        raise TypeError('Incorrect gm` format: it has to be a numpy array with dimentions (sites, haplotypic samples) with integer values 1 and 0')
+    if not ((isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and (mean_depth > 0).sum() == mean_depth.size) or (isinstance(mean_depth, (int, float)) and mean_depth > 0.0)):
+        raise TypeError('Incorrect `mean_depth` format: it has to be either i) numpy.array with dimentions (haplotypic samples, ) with values > 0 or ii) integer or float value > 0')
+    if not ((std_depth is None) or (isinstance(std_depth, (int, float)) and mean_depth >= 0.0)):
+        raise TypeError('Incorrect `std_depth` format: it has to be an integer or float value > 0')
+    if not (isinstance(e, float) and e >= 0 and e <= 1) :
+        raise TypeError('Incorrect `e` format: it has to be a float value >= 0 and <= 1')
+    if not (isinstance(ploidy, int) and ploidy > 0 and gm.shape[1]%ploidy == 0) :
+        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0 the second dimention of `gm` (haplotypic samples) must be divisible by ploidy')
+    if ref == None and alt == None:
         ref = np.full(gm.shape[0], "A")
         alt = np.full(gm.shape[0], "C")
-    elif not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ref.shape[0] == gm.shape[0]):
-        raise TypeError('Incorrect "ref" and/or "alt" format: they have to be a numpy array with dimentions (SNP, ) with string "A", "C", "G", "T" values')
+    elif not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ((ref == "A") + (ref == "C") + (ref == "G") + (ref == "T")) == ref.size and ((alt == "A") + (alt == "C") + (alt == "G") + (alt == "T")) == alt.size):
+        raise TypeError('Incorrect `ref` and/or `alt` format: they both have to be a numpy array with dimentions (sites, ) with string "A", "C", "G", "T" values')
     #Variables
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
     #1. Depths (DP) per haplotype (h)
-    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1], ploidy)
+    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1])
     #2. Sample depths (DP) per site per haplotype
     DP  = rng.poisson(DPh, size=gm.shape)
     #3. Sample correct and error reads per SNP per haplotype (Rh)
@@ -109,63 +146,54 @@ def sim_allelereadcounts(gm, ref = "", alt = "", mean_depth = 30., std_depth = 5
     #4. Add n haplotype read allele counts (n = ploidy) to obtain read allele counts per genotype
     return arc.reshape(arc.shape[0], arc.shape[1]//ploidy, ploidy, arc.shape[2]).sum(axis = 2)
 
+def get_GTxploidy(ploidy):
+    return np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
 
+def allelereadcounts_to_GL(arc, e, ploidy):
+    '''
+    Computes genotype likelihoods from allele read counts per site per individual. 
     
-def allelereadcounts_to_GL(Rg, e = 0.05):
-    GL = []
+    Parameters
+    ----------
+    arc : `numpy.ndarray`
+        Allele read counts per site per individual. The dimentions of the array are (sites, individuals, alleles). 
+        The third dimention of the array has size = 4, which corresponds to the four possible alleles: 0 = "A", 
+        1 = "C", 2 = "G" and 3 = "T".
     
-    for i in range(4):
-        for j in range(i, 4):
-            if i == j:
-                GL.append(-np.log(np.power(((1-e)/2 + (1-e)/2), Rg[:, :, i]) * 
-                                  np.power(((e/3)/2 + (e/3)/2), Rg.sum(axis = 2)-Rg[:, :, i])))
-            else:
-            
-                GL.append(-np.log(np.power(((1-e)/2 + (e/3)/2), Rg[:, :, i]+Rg[:, :, j]) * 
-                                  np.power(((e/3)/2 + (e/3)/2), Rg.sum(axis = 2)-Rg[:, :, i]-Rg[:, :, j])))
+    e : `float` 
+        Sequencing error probability per base pair per site. The value must be between 0 and 1.
 
-    GL = np.array(GL).transpose(1, 2, 0)
-    return GL - GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
+    ploidy : `int` 
+        Number of haplotypic chromosomes per individual.  
 
-def allelereadcounts_to_pileup(allelereadcounts, filename = "tmp/reads.pileup"):
-    with open(filename, "w") as out:
-        for i in range(allelereadcounts.shape[0]):
-            line = "1\t"+str(i+1)+"\tN"
-            for j in range(allelereadcounts.shape[1]):
-                nreads = allelereadcounts[i, j, :].sum()
-                line = line+"\t"+str(nreads)+"\t"
-                if nreads:
-                    for c, b in zip(allelereadcounts[i, j, :], ["A", "C", "G", "T"]):
-                        line = line+c*b
-                    line = line+"\t"+"."*nreads
-                else:
-                    line = line+"\t*\t*"
-            out.write(line+"\n")
+    Returns 
+    -------
 
-def create_fasta(length = 100_000, filename = "tmp/fasta.fa"):
-    with open(filename, "w") as fasta:
-        fasta.write(">1\n")
-        for i in range(0, length, 50):
-            fasta.write("{}\n".format("A"*50))
-    
-def read_angsd_gl(file = "tmp/angsdput.glf"):
-    angsd_gl = []
-    with open(file, "r") as f:
-        for line in f:
-            angsd_gl.append(np.array(line.strip().split()[2:]).reshape(5, 10).astype(np.float64).tolist())
-    return -np.array(angsd_gl)
+    GL : `numpy.ndarray`
+        Normalized genotype likelihoods per site per individual. The dimentions of the array are (sites, individuals, genotypes). 
+        The third dimention of the array corresponds to the combinations with replacement of all 4 possible alleles 
+        {"A", "C", "G", "T"} (i.e., for a diploid, there are 10 possible genotypes and the combination order is "AA", "AC",
+        "AG", "AT", "CC", "CG", ..., "TT"). 
 
-def msqrd(a, b):
-    return np.power(a-b, 2).sum()/a.size
+    References
+    ----------
+    1) McKenna A, Hanna M, Banks E, Sivachenko A, Cibulskis K, Kernytsky A, Garimella K, Altshuler D, Gabriel S, Daly M, DePristo MA (2010). The Genome Analysis Toolkit: a MapReduce framework for analyzing next-generation DNA sequencing data. Genome Res. 20:1297-303.
+    2) Thorfinn Sand Korneliussen, Anders Albrechtsen, Rasmus Nielsen. ANGSD: Analysis of Next Generation Sequencing Data. BMC Bioinform. 2014 Nov;15,356.
+    '''
+    if not (isinstance(arc, np.ndarray) and len(arc.shape) == 3 and arc.shape[2] == 4):
+        raise TypeError('Incorrect `arc` format: it has to be a numpy array with dimentions (sites, individuals, alleles) and the third dimention must be of size = 4')
+    if not (isinstance(e, float) and e >= 0 and e <= 1) :
+        raise TypeError('Incorrect `e` format: it has to be a float value >= 0 and <= 1')
+    if not (isinstance(ploidy, int) and ploidy > 0) :
+        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0')
 
-def allelereadcounts_to_vGL(allelereadcounts, e, ploidy = 2):
-    GTxploidy    = np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
+    GTxploidy    = get_GTxploidy(ploidy)
     AFxGTxploidy = np.array([(GTxploidy == 0).sum(axis = 1), (GTxploidy == 1).sum(axis = 1), (GTxploidy == 2).sum(axis = 1), (GTxploidy == 3).sum(axis = 1)])/ploidy
     
-    GL_vec = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), allelereadcounts.reshape(allelereadcounts.shape[0], allelereadcounts.shape[1], allelereadcounts.shape[2], 1)).sum(axis = 2)
-    return GL_vec-GL_vec.min(axis = 2).reshape(GL_vec.shape[0], GL_vec.shape[1], 1)
-
-def get_pGTxMm(ploidy = 2):
+    GL = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), arc.reshape(arc.shape[0], arc.shape[1], arc.shape[2], 1)).sum(axis = 2)
+    return GL-GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
+    
+def get_pGTxMm(ploidy):
     GTxploidy    = np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
     Mmxploidy    = np.array([list(x) for x in combinations([0, 1, 2, 3], 2)])
     pGTxMm = []
@@ -182,6 +210,74 @@ def get_pGTxMm(ploidy = 2):
         pGTxMm.append(np.array(pGTxMm_tmp))
     return np.array(pGTxMm)
 
-def gl_to_Mm(gl, ploidy = 2)
+def GL_to_Mm(GL, ploidy):
+    '''
+    Computes maximum (M) and minimum (m) frequency alleles in the population from genotype likelihoods. 
+    
+    Parameters
+    ----------
+    GL : `numpy.ndarray`
+        Normalized genotype likelihoods per site per individual. The dimentions of the array is (sites, individuals, genotypes). 
+        The third dimention of the array corresponds to the combinations with replacement of all 4 possible alleles 
+        {"A", "C", "G", "T"} (i.e., for a diploid, there are 10 possible genotypes and the combination order is "AA", "AC",
+        "AG", "AT", "CC", "CG", ..., "TT"). 
+
+    ploidy : `int` 
+        Number of haplotypic chromosomes per individual. 
+
+    Returns 
+    -------
+    `numpy.ndarray`
+        Maximum and minimum alleles per site. The dimentions of the array is (sites, ) and the values per site is an integer 
+        encoding the pair of M and m: 0 = "AC", 1 = "AG", 2 = "AT", 3 = "CG", 4 = "CT", 5 = "GT".
+    
+    References
+    ----------
+    1) Line Skotte, Thorfinn Sand Korneliussen, Anders Albrechtsen. Association testing for next-generation sequencing data using score statistics. Genet Epidemiol. 2012 Jul;36(5):430-7.
+    2) Thorfinn Sand Korneliussen, Anders Albrechtsen, Rasmus Nielsen. ANGSD: Analysis of Next Generation Sequencing Data. BMC Bioinform. 2014 Nov;15,356.
+    '''
+    if not (isinstance(GL, np.ndarray) and len(GL.shape) == 3):
+        raise TypeError('Incorrect `GL` format: it has to be a numpy array with dimentions (sites, individuals, genotypes)')
+    if not (isinstance(ploidy, int) and ploidy > 0 and gm.shape[1]%ploidy == 0):
+        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0 the second dimention of `gm` (haplotypic samples) must be divisible by ploidy')
+    if get_GTxploidy(ploidy).size != GL.shape[2]:
+        raise TypeError('Incorrect `ploidy` format or `GL` shape: the third dimention of `GL` {} does not correspond with `ploidy` value {}'.format(GL.shape[2], get_GTxploidy(ploidy).size))
+
     pGTxMm = get_pGTxMm(ploidy)
-    return np.argmin((gl.reshape(gl.shape[0], gl.shape[1], gl.shape[2], 1) * pGTxMm.reshape(1, 1, pGTxMm.shape[0], pGTxMm.shape[1])).sum(axis = 2).prod(axis = 1), axis = 1)
+    return np.argmin((GL.reshape(GL.shape[0], GL.shape[1], GL.shape[2], 1) * pGTxMm.reshape(1, 1, pGTxMm.shape[0], pGTxMm.shape[1])).sum(axis = 2).prod(axis = 1), axis = 1)
+
+def allelereadcounts_to_pileup(arc, output):
+    '''
+    Writes an allele read counts in a file in pileup format.
+
+    Parameters
+    ----------
+    arc : `numpy.ndarray`
+        Allele read counts per site per individual. The dimentions of the array are (sites, individuals, alleles). 
+        The third dimention of the array has size = 4, which corresponds to the four possible alleles: 0 = "A", 
+        1 = "C", 2 = "G" and 3 = "T".
+    
+    output : `str`
+        Output file name.
+
+    Returns 
+    -------
+    None
+    '''
+    if not (isinstance(arc, np.ndarray) and len(arc.shape) == 3 and arc.shape[2] == 4):
+        raise TypeError('Incorrect `arc` format: it has to be a numpy array with dimentions (sites, individuals, alleles) and the third dimention must be of size = 4')
+    if not (isinstance(output, str)):
+        raise TypeError('Incorrect `output` format: it has to be a string with the path where the output is written')
+    with open(output, "w") as out:
+        for i in range(arc.shape[0]):
+            line = "1\t"+str(i+1)+"\tN"
+            for j in range(arc.shape[1]):
+                nreads = arc[i, j, :].sum()
+                line = line+"\t"+str(nreads)+"\t"
+                if nreads:
+                    for c, b in zip(arc[i, j, :], ["A", "C", "G", "T"]):
+                        line = line+c*b
+                    line = line+"\t"+"."*nreads
+                else:
+                    line = line+"\t*\t*"
+            out.write(line+"\n")
