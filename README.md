@@ -1,2 +1,2 @@
 # simGL
-Simulate genotype likelihoods from tree sequence data
+Simulate genotype likelihoods from haplotype genotype matrix.
