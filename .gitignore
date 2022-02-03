@@ -5,3 +5,4 @@
 *.lock
 __pycache__
 notebook/tmp/*
+simGL.egg-info/

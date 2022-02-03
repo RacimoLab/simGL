@@ -1,6 +1,7 @@
 import msprime
-
 import simGL
+import tskit
+import numpy
 
 
 def sim_ts(seeds=(1, 2), n=5):
@@ -20,21 +21,18 @@ def sim_ts(seeds=(1, 2), n=5):
 def test_sim_allelereadcounts():
     # TODO: proper tests
     num_individuals = 5
-    ts = sim_ts(n=num_individuals)
-    ac = simGL.sim_allelereadcounts(ts, seed=1234)
-    assert ac.shape == (ts.num_sites, num_individuals, 4)
+    ts  = sim_ts(n=num_individuals)
+    arc = simGL.sim_allelereadcounts(gm = ts.genotype_matrix(), mean_depth = 15, std_depth = 2.5, e = 0.05, ploidy = 2, seed = 1234)
+    assert arc.shape == (ts.num_sites, num_individuals, 4)
 
 
 def test_allelereadcounts_to_GL():
     # TODO: proper tests
     num_individuals = 5
-    ts = sim_ts(n=num_individuals)
-    ac = simGL.sim_allelereadcounts(ts, seed=1234)
-    GL = simGL.allelereadcounts_to_GL(ac)
-    assert GL.shape == (10, ts.num_sites, num_individuals)
-
-
-######################################MOI#############################
+    ts  = sim_ts(n=num_individuals)
+    arc = simGL.sim_allelereadcounts(gm = ts.genotype_matrix(), mean_depth = 15, std_depth = 2.5, e = 0.05, ploidy = 2, seed = 1234)
+    GL  = simGL.allelereadcounts_to_GL(arc = arc, e = 0.05, ploidy = 2)
+    assert GL.shape == (ts.num_sites, num_individuals, 10)
 
 def allelereadcounts_to_GL_forloop(Rg, e = 0.05):
     GL = []
@@ -51,7 +49,6 @@ def allelereadcounts_to_GL_forloop(Rg, e = 0.05):
 
     GL = np.array(GL).transpose(1, 2, 0)
     return GL - GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
-
 
 def create_fasta(length = 100_000, filename = "tmp/fasta.fa"):
     with open(filename, "w") as fasta:
