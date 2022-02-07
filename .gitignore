@@ -6,3 +6,4 @@
 __pycache__
 notebook/tmp/*
 simGL.egg-info/
+build/
