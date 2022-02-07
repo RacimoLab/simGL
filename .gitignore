@@ -8,3 +8,4 @@ notebook/tmp/*
 simGL.egg-info/
 build/
 simGL.code-workspace
+.coverage

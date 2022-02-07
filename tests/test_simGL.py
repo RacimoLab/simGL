@@ -19,13 +19,14 @@ def sim_ts(seeds=(1, 2), n=5):
 
 
 def test_sim_allelereadcounts():
-    # TODO: proper tests
-    num_individuals = 5
-    ts  = sim_ts(n=num_individuals)
-    arc = simGL.sim_allelereadcounts(gm = ts.genotype_matrix(), mean_depth = 15, std_depth = 2.5, e = 0.05, ploidy = 2, seed = 1234)
-    assert arc.shape == (ts.num_sites, num_individuals, 4)
-
-def test_allelereadcounts_to_GL_inputs():
+    #Check that the output is correct according to gm dimentions and according to ploidy
+    for ploidy in [2, 4]:
+        num_individuals = 5
+        ts  = sim_ts(n=int(5*ploidy/2))
+        arc = simGL.sim_allelereadcounts(gm = ts.genotype_matrix(), mean_depth = 15, std_depth = 2.5, e = 0.05, ploidy = ploidy, seed = 1234)
+        assert arc.shape == (ts.num_sites, num_individuals, 4)
+    
+def test_sim_allelereadcounts_inputs():
     ts = sim_ts()
     ref = np.array([v.site.ancestral_state for v in ts.variants()])
     alt = np.array([v.site.mutations[0].derived_state for v in ts.variants()])
@@ -56,9 +57,42 @@ def test_allelereadcounts_to_GL_inputs():
     # - numpy array
     for std_depth in ["5", -4, np.array([3])]:
         try:
-            print(isinstance(std_depth, (int, float)))
             simGL.sim_allelereadcounts(gm = gm, mean_depth = 30, e = 0.05, ploidy = 2, seed = 1234, std_depth = std_depth, ref = ref, alt = alt)
         except TypeError:
+            pass
+    # e is:
+    # - string
+    # - > 1
+    # - < 1
+    # - numpy array
+    for e in ["5", -4, 3, np.array([0.5])]:
+        try:
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = 30, e = e, ploidy = 2, seed = 1234, std_depth = 5, ref = ref, alt = alt)
+        except TypeError:
+            pass
+    # ploidy is:
+    # - string
+    # - float < 1
+    # - gm.shape[1] not multiple of ploidy
+    # - numpy array
+    for ploidy in ["5", 0.5, 3, np.array([1])]:
+        try:
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = 30, e = 0.05, ploidy = ploidy, seed = 1234, std_depth = 5, ref = ref, alt = alt)
+        except TypeError:
+            pass
+    # ref and alt are:
+    # - string
+    # - float < 1
+    # - gm.shape[1] not multiple of ploidy
+    # - numpy array
+    ref_tt = np.copy(ref)
+    ref_tt[0] = "X"
+    for ref_t, alt_t in zip([ref,      None, ref.reshape(ref.shape[0], 1), ref_tt, np.array(["A", "C"]), ref],
+                            [alt[:-2], alt,  alt,                          alt,    np.array(["C", "A"]), alt.tolist()]):
+        try:
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = 30, e = 0.05, ploidy = 2, seed = 1234, std_depth = 5, ref = ref_t, alt = alt_t)
+        except TypeError:
+            print("Not passed")
             pass
 
 def test_allelereadcounts_to_GL():

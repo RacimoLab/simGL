@@ -79,7 +79,7 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
         sampled for each haplotypic sample in `gm`. This value only needs to be provided if the `mean_depth`
         inputed is an `int` or a `float`.
     
-    e : `float` 
+    e : `int` or `float` 
         Sequencing error probability per base pair per site. The value must be between 0 and 1.
     
     ploidy : `int` 
@@ -118,18 +118,19 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     #Checks
     if not (isinstance(gm, np.ndarray) and len(gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
         raise TypeError('Incorrect gm` format: it has to be a numpy array with dimentions (sites, haplotypic samples) with integer values 1 and 0')
-    if not ((isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and (mean_depth > 0).sum() == mean_depth.size) or (isinstance(mean_depth, (int, float)) and mean_depth > 0.0)):
+    if not ((isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and mean_depth.shape[0] == gm.shape[1] and (mean_depth > 0).sum() == mean_depth.size) or (isinstance(mean_depth, (int, float)) and mean_depth > 0.0)):
         raise TypeError('Incorrect `mean_depth` format: it has to be either i) numpy.array with dimentions (haplotypic samples, ) with values > 0 or ii) integer or float value > 0')
-    if not ((std_depth is None and isinstance(mean_depth, np.ndarray)) or (isinstance(std_depth, (int, float)) and mean_depth >= 0.0)):
+    if not ((isinstance(mean_depth, np.ndarray)) or (isinstance(std_depth, (int, float)) and std_depth >= 0.0)):
         raise TypeError('Incorrect `std_depth` format: it has to be an integer or float value > 0 if mean_depth is a integer or float value and not a numpy array')
-    if not (isinstance(e, float) and e >= 0 and e <= 1) :
+    if not (isinstance(e, (int, float)) and e >= 0.0 and e <= 1.0) :
         raise TypeError('Incorrect `e` format: it has to be a float value >= 0 and <= 1')
     if not (isinstance(ploidy, int) and ploidy > 0 and gm.shape[1]%ploidy == 0) :
         raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0 the second dimention of `gm` (haplotypic samples) must be divisible by ploidy')
-    if ref == None and alt == None:
+    if ref is None and alt is None:
         ref = np.full(gm.shape[0], "A")
         alt = np.full(gm.shape[0], "C")
-    elif not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ((ref == "A") + (ref == "C") + (ref == "G") + (ref == "T")) == ref.size and ((alt == "A") + (alt == "C") + (alt == "G") + (alt == "T")) == alt.size):
+    elif not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ref.size == gm.shape[0] and
+              ((ref == "A") + (ref == "C") + (ref == "G") + (ref == "T")).sum() == ref.size and ((alt == "A") + (alt == "C") + (alt == "G") + (alt == "T")).sum() == alt.size):
         raise TypeError('Incorrect `ref` and/or `alt` format: they both have to be a numpy array with dimentions (sites, ) with string "A", "C", "G", "T" values')
     #Variables
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
