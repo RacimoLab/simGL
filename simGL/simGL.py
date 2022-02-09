@@ -3,44 +3,36 @@ from itertools import combinations_with_replacement
 from itertools import combinations
 from scipy.stats import binom
 
-def incorporate_monomorphic(poly_gm, pos, start, end):
+
+def incorporate_monomorphic(gm, pos, start, end):
     '''
     Incorporates monomorphic sites in a polymorphic genotype matrix.
 
     Parameters
     ----------
-    poly_gm : `numpy.ndarray` 
+    gm  : `numpy.ndarray` 
         Genotype matrix with size (polymorphic sites, haplotypic samples) in which 0 denotes reference allele
         and 1 denotes alternative allele.
     pos : `numpy.ndarray` 
-        Genomic coordinates of the polymorphic sites with size (polymorphic sites, ) as integer or float values.
-        The order of these values must be the same as the first dimetion of `poly_gm`.
+        Genomic coordinates of the polymorphic sites with size (polymorphic sites, ) as integer values >= 0.
+        The values must be sorted and the order of these values must be the same as the first dimetion of `gm`.
     start : `int` or `float`
         Genomic start coordinate of the range for which monomorphic sites will be incorporated in the original
-        `poly_gm` matrix. The value must be >= 0 <= min(pos).
+        `gm` matrix. The value must be >= 0 <= min(pos).
     end : `int` or `float`
         Genomic end coordinate of the range for which monomorphic sites will be incorporated in the original
-        `poly_gm` matrix. The value must be >= max(pos).
+        `gm` matrix. The value must be >= max(pos).
     
     Returns 
     -------
-    gm : `numpy.ndarray`
+    gm2 : `numpy.ndarray`
         Genotype matrix with size (end-start, haplotypic samples) in which 0 denotes reference allele
         and 1 denotes alternative allele.
     '''
-    if not (isinstance(poly_gm, np.ndarray) and len(poly_gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
-        raise TypeError('Incorrect `poly_gm` format: it has to be a numpy array with dimentions (polymorphic sites, haplotypic samples) ') 
-    if not (isinstance(pos, np.ndarray) and len(pos.shape) == 1):
-        raise TypeError('Incorrect `pos` format: it has to be a numpy array with dimentions (polymorphic sites, ) ')
-    if not (isinstance(start, (int, float)) and start >= 0 and start <= min(pos)):
-        raise TypeError('Incorrect `start` format: it has to be an integer value >=0 and <= min(pos) ') 
-    if not (isinstance(end, (int, float)) and end >= max(pos)):
-        raise TypeError('Incorrect `end` format: it has to be an integer value >= max(pos)') 
-    if not (pos.shape[0] == poly_gm.shape[0]):
-        raise TypeError('Incorrect `poly_gm` and/or `pos` format: They must have the same first dimention poly_gm.shape = (x, y) and  pos.shape = (x, )')
-    gm = np.zeros((int(end)-int(start), poly_gm.shape[1]))
-    gm[pos.astype(int)] = poly_gm
-    return gm
+    assert check_gm(gm) and check_pos(gm, pos) and check_start(pos, start) and check_end(pos, end)
+    gm2 = np.zeros((int(end)-int(start), gm.shape[1]))
+    gm2[pos.astype(int)] = gm
+    return gm2
 
 def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
     if isinstance(mean_depth, np.ndarray):
@@ -116,22 +108,11 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
       but they must be still indicated.
     '''
     #Checks
-    if not (isinstance(gm, np.ndarray) and len(gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
-        raise TypeError('Incorrect gm` format: it has to be a numpy array with dimentions (sites, haplotypic samples) with integer values 1 and 0')
-    if not ((isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and mean_depth.shape[0] == gm.shape[1] and (mean_depth > 0).sum() == mean_depth.size) or (isinstance(mean_depth, (int, float)) and mean_depth > 0.0)):
-        raise TypeError('Incorrect `mean_depth` format: it has to be either i) numpy.array with dimentions (haplotypic samples, ) with values > 0 or ii) integer or float value > 0')
-    if not ((isinstance(mean_depth, np.ndarray)) or (isinstance(std_depth, (int, float)) and std_depth >= 0.0)):
-        raise TypeError('Incorrect `std_depth` format: it has to be an integer or float value > 0 if mean_depth is a integer or float value and not a numpy array')
-    if not (isinstance(e, (int, float)) and e >= 0.0 and e <= 1.0) :
-        raise TypeError('Incorrect `e` format: it has to be a float value >= 0 and <= 1')
-    if not (isinstance(ploidy, int) and ploidy > 0 and gm.shape[1]%ploidy == 0) :
-        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0 the second dimention of `gm` (haplotypic samples) must be divisible by ploidy')
+    assert check_gm(gm)
     if ref is None and alt is None:
         ref = np.full(gm.shape[0], "A")
         alt = np.full(gm.shape[0], "C")
-    elif not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ref.size == gm.shape[0] and
-              ((ref == "A") + (ref == "C") + (ref == "G") + (ref == "T")).sum() == ref.size and ((alt == "A") + (alt == "C") + (alt == "G") + (alt == "T")).sum() == alt.size):
-        raise TypeError('Incorrect `ref` and/or `alt` format: they both have to be a numpy array with dimentions (sites, ) with string "A", "C", "G", "T" values')
+    assert check_mean_depth(gm, mean_depth) and check_std_depth(mean_depth, std_depth) and check_e(e) and check_ploidy(ploidy) and check_gm_ploidy(gm, ploidy) and check_ref_alt(gm, ref, alt)
     #Variables
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
@@ -181,13 +162,8 @@ def allelereadcounts_to_GL(arc, e, ploidy):
     1) McKenna A, Hanna M, Banks E, Sivachenko A, Cibulskis K, Kernytsky A, Garimella K, Altshuler D, Gabriel S, Daly M, DePristo MA (2010). The Genome Analysis Toolkit: a MapReduce framework for analyzing next-generation DNA sequencing data. Genome Res. 20:1297-303.
     2) Thorfinn Sand Korneliussen, Anders Albrechtsen, Rasmus Nielsen. ANGSD: Analysis of Next Generation Sequencing Data. BMC Bioinform. 2014 Nov;15,356.
     '''
-    if not (isinstance(arc, np.ndarray) and len(arc.shape) == 3 and arc.shape[2] == 4):
-        raise TypeError('Incorrect `arc` format: it has to be a numpy array with dimentions (sites, individuals, alleles) and the third dimention must be of size = 4')
-    if not (isinstance(e, float) and e >= 0 and e <= 1) :
-        raise TypeError('Incorrect `e` format: it has to be a float value >= 0 and <= 1')
-    if not (isinstance(ploidy, int) and ploidy > 0) :
-        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0')
-
+    assert check_arc(arc) and check_e(e) and check_ploidy(ploidy)
+    
     GTxploidy    = get_GTxploidy(ploidy)
     AFxGTxploidy = np.array([(GTxploidy == 0).sum(axis = 1), (GTxploidy == 1).sum(axis = 1), (GTxploidy == 2).sum(axis = 1), (GTxploidy == 3).sum(axis = 1)])/ploidy
     
@@ -237,13 +213,7 @@ def GL_to_Mm(GL, ploidy):
     1) Line Skotte, Thorfinn Sand Korneliussen, Anders Albrechtsen. Association testing for next-generation sequencing data using score statistics. Genet Epidemiol. 2012 Jul;36(5):430-7.
     2) Thorfinn Sand Korneliussen, Anders Albrechtsen, Rasmus Nielsen. ANGSD: Analysis of Next Generation Sequencing Data. BMC Bioinform. 2014 Nov;15,356.
     '''
-    if not (isinstance(GL, np.ndarray) and len(GL.shape) == 3):
-        raise TypeError('Incorrect `GL` format: it has to be a numpy array with dimentions (sites, individuals, genotypes)')
-    if not (isinstance(ploidy, int) and ploidy > 0 and gm.shape[1]%ploidy == 0):
-        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0 the second dimention of `gm` (haplotypic samples) must be divisible by ploidy')
-    if get_GTxploidy(ploidy).size != GL.shape[2]:
-        raise TypeError('Incorrect `ploidy` format or `GL` shape: the third dimention of `GL` {} does not correspond with `ploidy` value {}'.format(GL.shape[2], get_GTxploidy(ploidy).size))
-
+    assert check_ploidy(ploidy) and check_GL(GL, ploidy)
     pGTxMm = get_pGTxMm(ploidy)
     return np.argmin((GL.reshape(GL.shape[0], GL.shape[1], GL.shape[2], 1) * pGTxMm.reshape(1, 1, pGTxMm.shape[0], pGTxMm.shape[1])).sum(axis = 2).prod(axis = 1), axis = 1)
 
@@ -282,3 +252,68 @@ def allelereadcounts_to_pileup(arc, output):
                 else:
                     line = line+"\t*\t*"
             out.write(line+"\n")
+
+# Functions to check input formatting
+def check_gm(gm):
+    if not (isinstance(gm, np.ndarray) and len(gm.shape) == 2 and ((gm == 0)+(gm == 1)).sum() == gm.size):
+        raise TypeError('Incorrect gm` format: it has to be a numpy array with dimentions (sites, haplotypic samples) with integer values 1 and 0')
+    return True
+
+def check_mean_depth(gm, mean_depth):
+    if not ((isinstance(mean_depth, np.ndarray) and len(mean_depth.shape) == 1 and mean_depth.shape[0] == gm.shape[1] and (mean_depth > 0).sum() == mean_depth.size) or (isinstance(mean_depth, (int, float)) and mean_depth > 0.0)):
+        raise TypeError('Incorrect `mean_depth` format: it has to be either i) numpy.array with dimentions (haplotypic samples, ) with values > 0 or ii) integer or float value > 0')
+    return True
+
+def check_std_depth(mean_depth, std_depth):
+    if not ((isinstance(mean_depth, np.ndarray)) or (isinstance(std_depth, (int, float)) and std_depth >= 0.0)):
+        raise TypeError('Incorrect `std_depth` format: it has to be an integer or float value > 0 if mean_depth is a integer or float value and not a numpy array')
+    return True
+
+def check_e(e):
+    if not (isinstance(e, (int, float)) and e >= 0.0 and e <= 1.0) :
+        raise TypeError('Incorrect `e` format: it has to be a float value >= 0 and <= 1')
+    return True
+
+def check_ploidy(ploidy):
+    if not (isinstance(ploidy, int) and ploidy > 0) :
+        raise TypeError('Incorrect `ploidy` format: it has to be an integer value > 0')
+    return True
+
+def check_gm_ploidy(gm, ploidy):
+    if not (gm.shape[1]%ploidy == 0) :
+        raise TypeError('Incorrect `ploidy` and/or `gm` format: the second dimention of `gm` (haplotypic samples) must be divisible by `ploidy`')
+    return True
+    
+def check_ref_alt(gm, ref, alt):
+    if not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ref.size == gm.shape[0] and
+              ((ref == "A") + (ref == "C") + (ref == "G") + (ref == "T")).sum() == ref.size and ((alt == "A") + (alt == "C") + (alt == "G") + (alt == "T")).sum() == alt.size):
+        raise TypeError('Incorrect `ref` and/or `alt` format: they both have to be a numpy array with dimentions (sites, ) with string "A", "C", "G", "T" values')
+    return True
+
+def check_pos(gm, pos):
+    if not (isinstance(pos, np.ndarray) and (pos >= 0).sum() == pos.size and len(pos.shape) == 1 and 
+            pos.shape[0] == gm.shape[0] and np.issubdtype(pos).dtype, np.integer and (pos[:-1] < pos[1:]).sum() == 0):
+        raise TypeError('Incorrect `pos` format: it has to be a numpy array with dimentions (polymorphic sites, ) ')
+    return True
+
+def check_start(pos, start):
+    if not (isinstance(start, int) and start >= 0 and start <= pos[0]):
+        raise TypeError('Incorrect `start` format: it has to be an integer value >=0 and <= pos[0] (minimum position value) ')
+    return True
+
+def check_end(pos, end):
+    if not (isinstance(end, int) and end >= pos[-1]):
+        raise TypeError('Incorrect `end` format: it has to be an integer value >= pos[-1] (maximum position value)')
+    return True
+
+def check_arc(arc):
+    if not (isinstance(arc, np.ndarray) and len(arc.shape) == 3 and arc.shape[2] == 4):
+        raise TypeError('Incorrect `arc` format: it has to be a numpy array with dimentions (sites, individuals, alleles) and the third dimention must be of size = 4')
+    return True
+
+def check_GL(GL, ploidy):
+    if not (isinstance(GL, np.ndarray) and len(GL.shape) == 3):
+        raise TypeError('Incorrect `GL` format: it has to be a numpy array with dimentions (sites, individuals, genotypes)')
+    if not (len([x for x in combinations_with_replacement([0, 1, 2, 3], ploidy)]) != GL.shape[2]):
+        raise TypeError('Incorrect `ploidy` format or `GL` shape: the third dimention of `GL` {} does not correspond with the possible genotypes {} from a `ploidy` value {}'.format(GL.shape[2], get_GTxploidy(ploidy).size, ploidy))
+    return True
