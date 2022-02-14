@@ -318,5 +318,4 @@ def check_GL(GL, ploidy):
         raise TypeError('Incorrect GL format: it has to be a numpy array with dimentions (sites, individuals, genotypes)')
     if not (len([x for x in combinations_with_replacement([0, 1, 2, 3], ploidy)]) == GL.shape[2]):
         raise TypeError('Incorrect ploidy format or GL format: the third dimention of GL {} does not correspond with the possible genotypes {} from a `ploidy` value {}'.format(GL.shape[2], get_GTxploidy(ploidy).size, ploidy))
-    print("pass")
     return True
