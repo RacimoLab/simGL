@@ -41,9 +41,28 @@ def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
     if isinstance(mean_depth, np.ndarray):
         return mean_depth
     else:
-        dp = rng.normal(loc = mean_depth, scale = std_depth, size=n_hap)
-        dp[dp < 0.0] = -dp[dp == 0.0]
+        dp = np.full((n_hap, ), 0)
+        while (dp <= 0).sum():
+            n = (dp <= 0).sum()
+            dp[dp <= 0] = rng.normal(loc = mean_depth, scale = std_depth, size=n)
         return dp
+
+def depth_per_haplotype_per_site(rng, DPh, pos, depth_type, start = None, end = None, l_reads = 150):
+    if depth_type == "indep": 
+        return rng.poisson(DPh, size=(pos.size, DPh.size))
+    elif depth_type == "reads":
+        l_genom = end-start
+        DP      = np.zeros((l_genom, DPh.size), dtype=int)
+        n_reads = np.round((DPh*l_genom)/l_reads).astype(int)
+        #For each sample
+        for i in range(n_reads.size):
+            #Simulate starting points for each read uniformally distributed
+            coor_5p = rng.integers(low=0, high=l_genom-l_reads, size=n_reads[i])
+            #Annotate the coverage per site
+            for j in coor_5p:
+                DP[j:j+l_reads, i] += 1
+            print(DP[:, i])
+        return DP[pos-start, :]
 
 def refalt_int_encoding(gm, ref, alt):
     refalt_str                    = np.array([ref, alt])
@@ -53,7 +72,7 @@ def refalt_int_encoding(gm, ref, alt):
     refalt_int[refalt_str == "T"] = 3
     return refalt_int[gm.reshape(-1), np.repeat(np.arange(gm.shape[0]), gm.shape[1])].reshape(gm.shape)
 
-def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = None, ref = None, alt = None):
+def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = None, ref = None, alt = None, pos = None, depth_type = "indep", start = None, end = None, l_reads = 150):
     '''
     Simulates allele read counts from a genotype matrix. 
     
@@ -74,6 +93,23 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
         sampled for each haplotypic sample in `gm`. This value only needs to be provided if the `mean_depth`
         inputed is an `int` or a `float`.
     
+    
+    
+    depth_type : `str`
+        The distribution from which the read counts per sample per site are sampled from. There are two options: 
+        
+        `indep` : The read counts per sample per site are sampled from a posion distribution.
+        
+        `reads` : Reads of length `l_reads` are simulated such that:
+        $$X = \frac{ln}{g}$$
+        where $X$ = `mean_depth` is the mean depth of the sample, $l$ = `l_reads` is the length of the reads, 
+
+    pos : `numpy.ndarray` 
+
+    start : None, 
+    
+    end : None
+
     e : `int` or `float` 
         Sequencing error probability per base pair per site. The value must be between 0 and 1.
     
@@ -122,7 +158,7 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     #1. Depths (DP) per haplotype (h)
     DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1])
     #2. Sample depths (DP) per site per haplotype
-    DP  = rng.poisson(DPh, size=gm.shape)
+    DP  = depth_per_haplotype_per_site(rng, DPh, pos, depth_type = "indep", start = None, end = None, l_reads = 150)
     #3. Sample correct and error reads per SNP per haplotype (Rh)
     #3.1. Convert anc = 0/der = 1 encoded gm into "A" = 0, "C" = 1, "G" = 3, "T" = 4 basepair (bp) encoded gm 
     gmbp = refalt_int_encoding(gm, ref, alt)
