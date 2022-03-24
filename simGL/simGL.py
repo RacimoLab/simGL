@@ -41,8 +41,10 @@ def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
     if isinstance(mean_depth, np.ndarray):
         return mean_depth
     else:
-        dp = rng.normal(loc = mean_depth, scale = std_depth, size=n_hap)
-        dp[dp < 0.0] = -dp[dp == 0.0]
+        dp = np.full((n_hap, ), 0.0)
+        while (dp <= 0).sum():
+            n = (dp <= 0).sum()
+            dp[dp <= 0] = rng.normal(loc = mean_depth, scale = std_depth, size=n)
         return dp
 
 def refalt_int_encoding(gm, ref, alt):
