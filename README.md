@@ -2,4 +2,4 @@
 
 Simulate genotype likelihoods from haplotype genotype matrix.
 
-Check this for a short overview.
+Check this [link](https://github.com/RacimoLab/simGL/blob/main/README.ipynb) for a short overview.
