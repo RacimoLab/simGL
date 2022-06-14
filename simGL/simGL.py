@@ -218,6 +218,7 @@ def GL_to_Mm(GL, ploidy):
     1) Line Skotte, Thorfinn Sand Korneliussen, Anders Albrechtsen. Association testing for next-generation sequencing data using score statistics. Genet Epidemiol. 2012 Jul;36(5):430-7.
     2) Thorfinn Sand Korneliussen, Anders Albrechtsen, Rasmus Nielsen. ANGSD: Analysis of Next Generation Sequencing Data. BMC Bioinform. 2014 Nov;15,356.
     '''
+    #TO DO: when there are too many individuals, the numeric operation is not sable.
     assert check_ploidy(ploidy) and check_GL(GL, ploidy)
     pGTxMm = get_pGTxMm(ploidy)
     return np.argmin((GL.reshape(GL.shape[0], GL.shape[1], GL.shape[2], 1) * pGTxMm.reshape(1, 1, pGTxMm.shape[0], pGTxMm.shape[1])).sum(axis = 2).prod(axis = 1), axis = 1)
