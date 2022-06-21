@@ -82,7 +82,7 @@ def linked_depth(rng, DPh, read_length, sites_n):
         for p in rng.integers(low=0, high=sites_n-read_length+1, size=r):
             dp[p:p+read_length] += 1
         DP.append(dp.tolist())
-    return np.array(DP)
+    return np.array(DP).T
 
 def independent_depth(rng, DPh, size):
     '''
@@ -165,6 +165,7 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     elif depth_type == "linked":
         assert check_positive_nonzero_integer(read_length, "read_length")
         DP  = linked_depth(rng, DPh, read_length, gm.shape[0])
+    assert DP.shape == gm.shape
     #3. Sample correct and error reads per SNP per haplotype (Rh)
     #3.1. Convert anc = 0/der = 1 encoded gm into "A" = 0, "C" = 1, "G" = 3, "T" = 4 basepair (bp) encoded gm 
     gmbp = refalt_int_encoding(gm, ref, alt)
