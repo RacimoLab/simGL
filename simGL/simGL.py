@@ -4,10 +4,10 @@ from itertools import combinations
 from scipy.stats import binom
 
 def e2q(e):
-    return -10*np.log(e)
+    return -10*np.log10(e)
 
 def q2e(q):
-    return np.exp(-q/10)
+    return np.power(10, -(q/10))
 
 def incorporate_monomorphic(gm, pos, start, end):
     '''
@@ -46,7 +46,7 @@ def refalt(ref, alt, n_sit):
     if ref is None and alt is None:
         ref = np.full(n_sit, "A")
         alt = np.full(n_sit, "C")
-        return ref, alt
+    return ref, alt
 
 def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
     if isinstance(mean_depth, np.ndarray):
@@ -66,7 +66,7 @@ def refalt_int_encoding(gm, ref, alt):
     refalt_int[refalt_str == "T"] = 3
     return refalt_int[gm.reshape(-1), np.repeat(np.arange(gm.shape[0]), gm.shape[1])].reshape(gm.shape)
 
-def linked_depth(rng, DPh, read_length, sites_n):
+def linked_depth(rng, DPh, read_length, n_sit):
     '''
     Simulates reads in a contiguous genomic region to compute the depth per position.
     
@@ -78,7 +78,7 @@ def linked_depth(rng, DPh, read_length, sites_n):
         Numpy array with the depth per haplotype
     read_length : `int`
         Read length in base pair units
-    sites_n : `int`
+    n_sit : `int`
         number of sites that depth has to be simulated for
     
     Returns 
@@ -87,10 +87,10 @@ def linked_depth(rng, DPh, read_length, sites_n):
         Depth per site per haplotype
     '''
     DP = []
-    read_n     = ((DPh*sites_n)/read_length).astype("int")
+    read_n     = ((DPh*n_sit)/read_length).astype("int")
     for r in read_n:
-        dp = np.zeros((sites_n,), dtype=int)
-        for p in rng.integers(low=0, high=sites_n-read_length+1, size=r):
+        dp = np.zeros((n_sit,), dtype=int)
+        for p in rng.integers(low=0, high=n_sit-read_length+1, size=r):
             dp[p:p+read_length] += 1
         DP.append(dp.tolist())
     return np.array(DP).T
@@ -150,7 +150,7 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
         (haplotypic samples, )) and the order must be the same as the second dimention of `gm`.
     
     ploidy : `int` 
-        Number of haplotypic chromosomes per individual.
+        Number of haplotypic chromosomes per individual. It is recomended to read Notes about ploidy.
     
     ref : `numpy.ndarray`, optional
         Reference alleles list per site. The size of the array must be (sites, ) and the order has to 
@@ -181,6 +181,14 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
       must be 15. 
     - If monomorphic sites are included, the `alt` values corresponding to those sites are not taken into account, 
       but they must be still indicated.
+    - Regarding ploidy, if the error parameter is specified as a constant for all individuals, the user can specify 
+      the desired ploidy of the organisms simulated. 
+      If different error rate per haplotype is inputed and the user wants to compute Genotype Likelihoods (GL) for 
+      organisms with ploidy > 1, ploidy should be equal to 1 for this function, and when the later function 
+      `allelereadcounts_to_GL()` is used, then, the desired ploidy can be specified. This is because the error values 
+      must be inputed again to compute GL and if ploidy > 1 is specified for this function, the dimentions of `arc`
+      will be smaller than the dimentions of `e`. Nonetheless, if the user desires to obtain the output `arc` in 
+      a certain ploidy, one can use `ploidy_sum(arc, ploidy)` fucntion. 
     '''
     #Checks
     assert check_gm(gm)
