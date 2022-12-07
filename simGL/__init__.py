@@ -1,1 +1,1 @@
-from .simGL import incorporate_monomorphic, sim_allelereadcounts, allelereadcounts_to_GL, GL_to_Mm, allelereadcounts_to_pileup
+from .simGL import incorporate_monomorphic, depth_per_haplotype, sim_allelereadcounts, allelereadcounts_to_GL, GL_to_Mm, allelereadcounts_to_pileup
