@@ -3,6 +3,11 @@ from itertools import combinations_with_replacement
 from itertools import combinations
 from scipy.stats import binom
 
+def e2q(e):
+    return -10*np.log10(e)
+
+def q2e(q):
+    return np.power(10, -(q/10))
 
 def incorporate_monomorphic(gm, pos, start, end):
     '''
@@ -37,6 +42,12 @@ def incorporate_monomorphic(gm, pos, start, end):
     gm2[pos.astype(int)] = gm
     return gm2
 
+def refalt(ref, alt, n_sit):
+    if ref is None and alt is None:
+        ref = np.full(n_sit, "A")
+        alt = np.full(n_sit, "C")
+    return ref, alt
+
 def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
     if isinstance(mean_depth, np.ndarray):
         return mean_depth
@@ -55,7 +66,7 @@ def refalt_int_encoding(gm, ref, alt):
     refalt_int[refalt_str == "T"] = 3
     return refalt_int[gm.reshape(-1), np.repeat(np.arange(gm.shape[0]), gm.shape[1])].reshape(gm.shape)
 
-def linked_depth(rng, DPh, read_length, sites_n):
+def linked_depth(rng, DPh, read_length, n_sit):
     '''
     Simulates reads in a contiguous genomic region to compute the depth per position.
     
@@ -67,7 +78,7 @@ def linked_depth(rng, DPh, read_length, sites_n):
         Numpy array with the depth per haplotype
     read_length : `int`
         Read length in base pair units
-    sites_n : `int`
+    n_sit : `int`
         number of sites that depth has to be simulated for
     
     Returns 
@@ -76,10 +87,10 @@ def linked_depth(rng, DPh, read_length, sites_n):
         Depth per site per haplotype
     '''
     DP = []
-    read_n     = ((DPh*sites_n)/read_length).astype("int")
+    read_n     = ((DPh*n_sit)/read_length).astype("int")
     for r in read_n:
-        dp = np.zeros((sites_n,), dtype=int)
-        for p in rng.integers(low=0, high=sites_n-read_length+1, size=r):
+        dp = np.zeros((n_sit,), dtype=int)
+        for p in rng.integers(low=0, high=n_sit-read_length+1, size=r):
             dp[p:p+read_length] += 1
         DP.append(dp.tolist())
     return np.array(DP).T
@@ -90,6 +101,26 @@ def independent_depth(rng, DPh, size):
     distribution with a lambda value "DPh" per haplotype
     '''
     return rng.poisson(DPh, size=size)
+
+def depth_per_site_per_haplotype(rng, depth_type, DPh, gm_shape, read_length): 
+    if depth_type == "independent":
+        DP  = independent_depth(rng, DPh, gm_shape)
+    elif depth_type == "linked":
+        assert check_positive_nonzero_integer(read_length, "read_length")
+        DP  = linked_depth(rng, DPh, read_length, gm_shape[0])
+    assert DP.shape == gm_shape
+    return DP
+
+def simulate_arc(e, err, rng, DP, gmbp):
+    if isinstance(e, np.ndarray):
+        err = err.transpose(2, 0, 1)
+        return rng.multinomial(DP, err[np.tile(np.arange(gmbp.shape[1]), gmbp.shape[0]), gmbp.reshape(-1)].reshape(gmbp.shape[0], gmbp.shape[1], 4))
+    else:
+        return rng.multinomial(DP, err[gmbp])
+
+def ploidy_sum(arr, ploidy):
+    s = arr.shape
+    return arr.reshape(-1).reshape(s[0], s[1]//ploidy, ploidy, s[2]).sum(axis = 2)
 
 def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = None, ref = None, alt = None, read_length = None, depth_type = "independent"):
     '''
@@ -104,19 +135,22 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     mean_depth : `int` or `float` or `numpy.ndarray`
         Read depth of the each haplotypic sample in `gm`. If a `int` or `float` value is inputed, the function
         will sample random values from a normal distribution with mean = `mean_depth` and std = `std_depth`.
-        If a `numpy.ndarray` is inputed, the array must have size (haplotypic samples, ) and the order must
-        be the same as the second dimention of `gm`.
+        If a `numpy.ndarray` is inputed, there must be an error value per haplotype (i.e., the array must have size 
+        (haplotypic samples, )) and the order must be the same as the second dimention of `gm`.
     
     std_depth : `int` or `float`
         The standard deviation parameter of the normal distribution from which read depth values are randomly
         sampled for each haplotypic sample in `gm`. This value only needs to be provided if the `mean_depth`
         inputed is an `int` or a `float`.
     
-    e : `int` or `float` 
-        Sequencing error probability per base pair per site. The value must be between 0 and 1.
+    e : `int` or `float` or `numpy.ndarray`
+        Sequencing error probability per base pair per site. The values must be between 0 and 1. If a `int` or `float` 
+        value is inputed, the function will use the same error probablity value for each haplotype and each site. 
+        If a `numpy.ndarray` is inputed, there must be an error value per haplotype (i.e., the array must have size 
+        (haplotypic samples, )) and the order must be the same as the second dimention of `gm`.
     
     ploidy : `int` 
-        Number of haplotypic chromosomes per individual.
+        Number of haplotypic chromosomes per individual. It is recomended to read Notes about ploidy.
     
     ref : `numpy.ndarray`, optional
         Reference alleles list per site. The size of the array must be (sites, ) and the order has to 
@@ -147,32 +181,33 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
       must be 15. 
     - If monomorphic sites are included, the `alt` values corresponding to those sites are not taken into account, 
       but they must be still indicated.
+    - Regarding ploidy, if the error parameter is specified as a constant for all individuals, the user can specify 
+      the desired ploidy of the organisms simulated. 
+      If different error rate per haplotype is inputed and the user wants to compute Genotype Likelihoods (GL) for 
+      organisms with ploidy > 1, ploidy should be equal to 1 for this function, and when the later function 
+      `allelereadcounts_to_GL()` is used, then, the desired ploidy can be specified. This is because the error values 
+      must be inputed again to compute GL and if ploidy > 1 is specified for this function, the dimentions of `arc`
+      will be smaller than the dimentions of `e`. Nonetheless, if the user desires to obtain the output `arc` in 
+      a certain ploidy, one can use `ploidy_sum(arc, ploidy)` fucntion. 
     '''
     #Checks
     assert check_gm(gm)
-    if ref is None and alt is None:
-        ref = np.full(gm.shape[0], "A")
-        alt = np.full(gm.shape[0], "C")
-    assert check_mean_depth(gm, mean_depth) and check_std_depth(mean_depth, std_depth) and check_e(e) and check_ploidy(ploidy) and check_gm_ploidy(gm, ploidy) and check_ref_alt(gm, ref, alt) and check_depth_type(depth_type)
+    ref, alt = refalt(ref, alt, gm.shape[0])
+    assert check_mean_depth(gm, mean_depth) and check_std_depth(mean_depth, std_depth) and check_e(gm, e) and check_ploidy(ploidy) and check_gm_ploidy(gm, ploidy) and check_ref_alt(gm, ref, alt) and check_depth_type(depth_type)
     #Variables
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
     #1. Depths (DP) per haplotype (h)
     DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1])
     #2. Sample depths (DP) per site per haplotype
-    if depth_type == "independent":
-        DP  = independent_depth(rng, DPh, gm.shape)
-    elif depth_type == "linked":
-        assert check_positive_nonzero_integer(read_length, "read_length")
-        DP  = linked_depth(rng, DPh, read_length, gm.shape[0])
-    assert DP.shape == gm.shape
+    DP = depth_per_site_per_haplotype(rng, depth_type, DPh, gm.shape, read_length)
     #3. Sample correct and error reads per SNP per haplotype (Rh)
     #3.1. Convert anc = 0/der = 1 encoded gm into "A" = 0, "C" = 1, "G" = 3, "T" = 4 basepair (bp) encoded gm 
     gmbp = refalt_int_encoding(gm, ref, alt)
     #3.2. Simulate allele read counts (ARC) per haplotype (h) per site (s)
-    arc  = rng.multinomial(DP, err[gmbp])
+    arc = simulate_arc(e, err, rng, DP, gmbp)
     #4. Add n haplotype read allele counts (n = ploidy) to obtain read allele counts per genotype
-    return arc.reshape(arc.shape[0], arc.shape[1]//ploidy, ploidy, arc.shape[2]).sum(axis = 2)
+    return ploidy_sum(arc, ploidy)
 
 def get_GTxploidy(ploidy):
     return np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
@@ -184,12 +219,27 @@ def allelereadcounts_to_GL(arc, e, ploidy):
     Parameters
     ----------
     arc : `numpy.ndarray`
-        Allele read counts per site per individual. The dimentions of the array are (sites, individuals, alleles). 
-        The third dimention of the array has size = 4, which corresponds to the four possible alleles: 0 = "A", 
-        1 = "C", 2 = "G" and 3 = "T".
+        Allele read counts per site per individual or haplotype. The dimentions of the array are 
+        (sites, individuals or haplotypes, alleles). 
+        
+        The second dimention will depend on the format of the `e` parameter. If the error parameter 
+        is the same for every haplotype (`int` or `float`), the arc inputed can be per individual. 
+        Instead, if the error parameter has a value for every haplotype (`np.array`), the arc must 
+        be per haplotypic sample. This is because to compute GL it is needed to know the number of 
+        reads per haplotype and their error rate. For example, to obtain the arc fir the former case 
+        for diploid organisms one must call:
+        `sim_allelereadcounts(..., ploidy = 2, ...)` 
+        but the latter, one must use:
+        `sim_allelereadcounts(..., ploidy = 1, ...)`. 
+        
+        The third dimention of the array has size = 4, which corresponds to the four possible alleles: 
+        0 = "A", 1 = "C", 2 = "G" and 3 = "T".
     
-    e : `float` 
-        Sequencing error probability per base pair per site. The value must be between 0 and 1.
+    e : `int` or `float` or `numpy.ndarray`
+        Sequencing error probability per base pair per site. The values must be between 0 and 1. If a `int` or `float` 
+        value is inputed, the function will use the same error probablity value for each haplotype and each site. 
+        If a `numpy.ndarray` is inputed, there must be an error value per haplotype (i.e., the array must have size 
+        (haplotypic samples, )) and the order must be the same as the second dimention of `arc`.
 
     ploidy : `int` 
         Number of haplotypic chromosomes per individual.  
@@ -208,14 +258,35 @@ def allelereadcounts_to_GL(arc, e, ploidy):
     1) McKenna A, Hanna M, Banks E, Sivachenko A, Cibulskis K, Kernytsky A, Garimella K, Altshuler D, Gabriel S, Daly M, DePristo MA (2010). The Genome Analysis Toolkit: a MapReduce framework for analyzing next-generation DNA sequencing data. Genome Res. 20:1297-303.
     2) Thorfinn Sand Korneliussen, Anders Albrechtsen, Rasmus Nielsen. ANGSD: Analysis of Next Generation Sequencing Data. BMC Bioinform. 2014 Nov;15,356.
     '''
-    assert check_arc(arc) and check_e(e) and check_ploidy(ploidy)
+    assert check_arc(arc) and check_e(arc, e) and check_ploidy(ploidy)
     
+    #1. Obtain an array which rows are possible genotypes depending (GT) on ploidy (ploidy) and each value is the encoded bp in that genotype (e.g., ["AA", "AC"] = [[0, 0], [0, 1]])
     GTxploidy    = get_GTxploidy(ploidy)
+    #2. Obtain an array which rows are the 4 bp, the columns are the GT and each value denotes the frequency of each allele
     AFxGTxploidy = np.array([(GTxploidy == 0).sum(axis = 1), (GTxploidy == 1).sum(axis = 1), (GTxploidy == 2).sum(axis = 1), (GTxploidy == 3).sum(axis = 1)])/ploidy
     
-    GL = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), arc.reshape(arc.shape[0], arc.shape[1], arc.shape[2], 1)).sum(axis = 2)
-    return GL-GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
-    
+    #3. We can compute the GL in two different ways: the first, which allows different error values per haplotype, is a generalized form of the second which only allows errors to be the same for all haplotypes and sites
+    #   The reason why I keep both is because the former might be slower than the latter.
+    if isinstance(e, np.ndarray):
+        #I reformat the error array such that I can make matrix operations
+        er = np.repeat(e, AFxGTxploidy.size).reshape(e.shape + AFxGTxploidy.shape)
+        #Here it is computed the negative log of the multiplication of the error values and the "AFxGTxploidy" which results into an array that determines for every genotype the probabilities of observing a read
+        #taking into account the error probabilities
+        ERxAFxGTxploidy    = -np.log(((AFxGTxploidy*(1-er)+(1-AFxGTxploidy)*(er/3))))
+        #This array is then reformated for later operations
+        ERxAFxGTxploidy    = ERxAFxGTxploidy.reshape((1,) + ERxAFxGTxploidy.shape)
+        #The number of reads of each base pair are taken into account to compute the likelihood of observing all reads for a given genotype considering the error
+        RExerxAFxGTxploidy = np.multiply(ERxAFxGTxploidy, arc.reshape(arc.shape + (1,))).sum(axis = 2)
+        #The likelihoods for haplotypes of the same individual are finally added up together
+        GL = ploidy_sum(RExerxAFxGTxploidy, ploidy)
+        #The GL are normalized to the most likely genotype
+        return GL-GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
+    else:
+        #All the steps in the prevous if statement are done in a single line since the error is the same and simplifies the calculation
+        GL = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), arc.reshape(arc.shape[0], arc.shape[1], arc.shape[2], 1)).sum(axis = 2)
+        #The GL are normalized to the most likely genotype
+        return GL-GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
+
 def get_pGTxMm(ploidy):
     GTxploidy    = np.array([list(x) for x in combinations_with_replacement([0, 1, 2, 3], ploidy)])
     Mmxploidy    = np.array([list(x) for x in combinations([0, 1, 2, 3], 2)])
@@ -316,9 +387,9 @@ def check_std_depth(mean_depth, std_depth):
         raise TypeError('Incorrect std_depth format: it has to be an integer or float value > 0 if mean_depth is a integer or float value and not a numpy array')
     return True
 
-def check_e(e):
-    if not (isinstance(e, (int, float)) and e >= 0.0 and e <= 1.0) :
-        raise TypeError('Incorrect e format: it has to be a float value >= 0 and <= 1')
+def check_e(arr, e):
+    if not ((isinstance(e, np.ndarray) and len(e.shape) == 1 and e.shape[0] == arr.shape[1] and ((e >= 0)*(e <= 1)).sum() == e.size) or (isinstance(e, (int, float)) and e >= 0.0 and e <= 1.0)):
+        raise TypeError('Incorrect e format: it has to be either i) numpy.array with dimentions (haplotypic samples, ) with values 0 <= e <= 1 or ii) integer or float value 0 <= e <= 1')
     return True
 
 def check_ploidy(ploidy):
