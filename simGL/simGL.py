@@ -37,15 +37,15 @@ def incorporate_monomorphic(gm, pos, start, end):
     gm2[pos.astype(int)] = gm
     return gm2
 
-def depth_per_haplotype(rng, mean_depth, std_depth, n_hap):
+def depth_per_haplotype(rng, mean_depth, std_depth, n_hap, ploidy):
     if isinstance(mean_depth, np.ndarray):
         return mean_depth
     else:
-        dp = np.full((n_hap, ), 0.0)
+        dp = np.full((n_hap//ploidy, ), 0.0)
         while (dp <= 0).sum():
             n = (dp <= 0).sum()
             dp[dp <= 0] = rng.normal(loc = mean_depth, scale = std_depth, size=n)
-        return dp
+        return dp.repeat(ploidy)
 
 def refalt_int_encoding(gm, ref, alt):
     refalt_str                    = np.array([ref, alt])
@@ -122,7 +122,7 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
     #1. Depths (DP) per haplotype (h)
-    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1])
+    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1], ploidy)
     #2. Sample depths (DP) per site per haplotype
     DP  = rng.poisson(DPh, size=gm.shape)
     #3. Sample correct and error reads per SNP per haplotype (Rh)
