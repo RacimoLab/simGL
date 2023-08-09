@@ -55,7 +55,43 @@ def refalt_int_encoding(gm, ref, alt):
     refalt_int[refalt_str == "T"] = 3
     return refalt_int[gm.reshape(-1), np.repeat(np.arange(gm.shape[0]), gm.shape[1])].reshape(gm.shape)
 
-def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = None, ref = None, alt = None):
+def linked_depth(rng, DPh, read_length, sites_n):
+    '''
+    Simulates reads in a contiguous genomic region to compute the depth per position.
+    
+    Parameters
+    ----------
+    rng : `numpy.random._generator.Generator` 
+        random number generation numpy object
+    DPh : `numpy.ndarray`
+        Numpy array with the depth per haplotype
+    read_length : `int`
+        Read length in base pair units
+    sites_n : `int`
+        number of sites that depth has to be simulated for
+    
+    Returns 
+    -------
+    DP : `numpy.ndarray`
+        Depth per site per haplotype
+    '''
+    DP = []
+    read_n     = ((DPh*sites_n)/read_length).astype("int")
+    for r in read_n:
+        dp = np.zeros((sites_n,), dtype=int)
+        for p in rng.integers(low=0, high=sites_n-read_length+1, size=r):
+            dp[p:p+read_length] += 1
+        DP.append(dp.tolist())
+    return np.array(DP).T
+
+def independent_depth(rng, DPh, size):
+    '''
+    Returns depth per position per haplotype (size[0], size[1]) drawn from the "rng" from a Poisson 
+    distribution with a lambda value "DPh" per haplotype
+    '''
+    return rng.poisson(DPh, size=size)
+
+def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = None, ref = None, alt = None, read_length = None, depth_type = "independent"):
     '''
     Simulates allele read counts from a genotype matrix. 
     
@@ -117,14 +153,19 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     if ref is None and alt is None:
         ref = np.full(gm.shape[0], "A")
         alt = np.full(gm.shape[0], "C")
-    assert check_mean_depth(gm, mean_depth) and check_std_depth(mean_depth, std_depth) and check_e(e) and check_ploidy(ploidy) and check_gm_ploidy(gm, ploidy) and check_ref_alt(gm, ref, alt)
+    assert check_mean_depth(gm, mean_depth) and check_std_depth(mean_depth, std_depth) and check_e(e) and check_ploidy(ploidy) and check_gm_ploidy(gm, ploidy) and check_ref_alt(gm, ref, alt) and check_depth_type(depth_type)
     #Variables
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
     #1. Depths (DP) per haplotype (h)
     DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1], ploidy)
     #2. Sample depths (DP) per site per haplotype
-    DP  = rng.poisson(DPh, size=gm.shape)
+    if depth_type == "independent":
+        DP  = independent_depth(rng, DPh, gm.shape)
+    elif depth_type == "linked":
+        assert check_positive_nonzero_integer(read_length, "read_length")
+        DP  = linked_depth(rng, DPh, read_length, gm.shape[0])
+    assert DP.shape == gm.shape
     #3. Sample correct and error reads per SNP per haplotype (Rh)
     #3.1. Convert anc = 0/der = 1 encoded gm into "A" = 0, "C" = 1, "G" = 3, "T" = 4 basepair (bp) encoded gm 
     gmbp = refalt_int_encoding(gm, ref, alt)
@@ -289,7 +330,17 @@ def check_gm_ploidy(gm, ploidy):
     if not (gm.shape[1]%ploidy == 0) :
         raise TypeError('Incorrect ploidy and/or gm format: the second dimention of gm (haplotypic samples) must be divisible by ploidy')
     return True
-    
+
+def check_depth_type(depth_type):
+    if not isinstance(depth_type, str) and depth_type not in ["independent", "linked"]:
+        raise TypeError('Incorrect depth_type format: it has to be a string, either "independent" or "linked"')
+    return True
+
+def check_positive_nonzero_integer(read_length, name):
+    if not isinstance(read_length, int) and read_length <= 0:
+        raise TypeError('Incorrect {} format: it has to be a integer value > 0'.format(name))
+    return True
+
 def check_ref_alt(gm, ref, alt):
     if not (isinstance(ref, np.ndarray) and isinstance(alt, np.ndarray) and len(ref.shape) == 1 and len(alt.shape) == 1 and ref.shape == alt.shape and ref.size == gm.shape[0] and
               ((ref == "A") + (ref == "C") + (ref == "G") + (ref == "T")).sum() == ref.size and ((alt == "A") + (alt == "C") + (alt == "G") + (alt == "T")).sum() == alt.size):
