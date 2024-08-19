@@ -35,7 +35,7 @@ def test_input_checks():
     #     - is a numpy array with values different than 1 or 0
     for gm in [2, np.array([0, 1, 1, 0]), np.array([[0, 3], [1, 0]])]:
         with pytest.raises(TypeError, match=r"^Incorrect gm format: .*"):
-            simGL.sim_allelereadcounts(gm = gm, mean_depth = 30, e = 0.05, ploidy = 2, seed = 1234, std_depth = 5, ref = None, alt = None) 
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = 30, e = 0.05, ploidy = 2, seed = 1234, std_depth = 5, ref = None, alt = None, depth_type = "independent", read_length = None, start = None, end = None, pos = None) 
     gm = ts.genotype_matrix()
     # mean_depth is:
     #     - string
@@ -45,7 +45,7 @@ def test_input_checks():
     #     - numpy array with 1 dimention and positive values with a different size than gm.shape[1]
     for mean_depth in ["30", -1, np.array([[15], [15]]), np.array([15, 0]), np.full(gm.shape[1]-1, 15)]:
         with pytest.raises(TypeError, match=r"^Incorrect mean_depth format: .*"):
-            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = 0.05, ploidy = 2, seed = 1234, std_depth = 5, ref = None, alt = None)
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = 0.05, ploidy = 2, seed = 1234, std_depth = 5, ref = None, alt = None, depth_type = "independent", read_length = None, start = None, end = None, pos = None)
     mean_depth = 15
     # std_depth is:
     # - string
@@ -53,7 +53,7 @@ def test_input_checks():
     # - numpy array
     for std_depth in ["5", -4, np.array([3])]:
         with pytest.raises(TypeError, match=r"^Incorrect std_depth format: .*"):
-            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = 0.05, ploidy = 2, seed = 1234, std_depth = std_depth, ref = None, alt = None)
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = 0.05, ploidy = 2, seed = 1234, std_depth = std_depth, ref = None, alt = None, depth_type = "independent", read_length = None, start = None, end = None, pos = None)
     std_depth = 5
     # e is:
     # - string
@@ -62,7 +62,7 @@ def test_input_checks():
     # - numpy array
     for e in ["5", -4, 3, np.array([0.5])]:
         with pytest.raises(TypeError, match=r"^Incorrect e format: .*"):
-            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = 2, seed = 1234, std_depth = std_depth, ref = None, alt = None)
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = 2, seed = 1234, std_depth = std_depth, ref = None, alt = None, depth_type = "independent", read_length = None, start = None, end = None, pos = None)
     e = 0.05
     # ploidy is:
     # - string
@@ -71,10 +71,10 @@ def test_input_checks():
     # - numpy array
     for ploidy in ["5", 0.5, np.array([1])]:
         with pytest.raises(TypeError, match=r"^Incorrect ploidy format: .*"):
-            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = None, alt = None)
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = None, alt = None, depth_type = "independent", read_length = None, start = None, end = None, pos = None)
     # - gm.shape[1] not multiple of ploidy
     with pytest.raises(TypeError, match=r"^Incorrect ploidy and/or gm format: .*"):
-        simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = gm.shape[1]+1, seed = 1234, std_depth = std_depth, ref = None, alt = None)
+        simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = gm.shape[1]+1, seed = 1234, std_depth = std_depth, ref = None, alt = None, depth_type = "independent", read_length = None, start = None, end = None, pos = None)
     ploidy = 2
     # ref and alt are:
     # - not the same length
@@ -90,7 +90,33 @@ def test_input_checks():
     for ref_t, alt_t in zip([ref,      None, ref.reshape(ref.shape[0], 1), ref_tt, np.array(["A", "C"]), ref],
                             [alt[:-2], alt,  alt,                          alt,    np.array(["C", "A"]), alt.tolist()]):
         with pytest.raises(TypeError, match=r"^Incorrect ref and/or alt format: .*"):
-            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = ref_t, alt = alt_t)
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = ref_t, alt = alt_t, depth_type = "independent", read_length = None, start = None, end = None, pos = None)
+    # depth_type is not one of the two strings: independent or linked:
+    for depth_type in [0, None, "asdfa"]:
+        with pytest.raises(TypeError, match=r"^Incorrect depth_type format: .*"):
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = ref, alt = alt, depth_type = depth_type, read_length = None, start = None, end = None, pos = None)
+    depth_type = "linked"
+    # read_length is:
+    #     - not a positive integer above 0
+    for read_length in [0, "asdfa", 5.4]:
+        with pytest.raises(TypeError, match=r"^Incorrect read_length format: .*"):
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = ref, alt = alt, depth_type = depth_type, read_length = read_length, start = None, end = None, pos = None)
+    read_length = 100
+    # start is:
+    #     - not a positive integer or 0 smaller than the minimum coordinate position 
+    pos = np.array([int(v.site.position) for v in ts.variants()])
+    end = 1_000_000
+    for start in ["asdfa", 5.4, pos[0]+1]:
+        with pytest.raises(TypeError, match=r"^Incorrect start format: .*"):
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = ref, alt = alt, depth_type = depth_type, read_length = read_length, start = start, end = end, pos = pos)
+    start = 0
+    #pos[0]+1
+    # end is:
+    #     - not a positive integer greater than the maximum coordinate position
+    for end in [0, "asdfa", 5.4, pos[-1]-11]:
+        with pytest.raises(TypeError, match=r"^Incorrect end format: .*"):
+            simGL.sim_allelereadcounts(gm = gm, mean_depth = mean_depth, e = e, ploidy = ploidy, seed = 1234, std_depth = std_depth, ref = ref, alt = alt, depth_type = depth_type, read_length = read_length, start = start, end = end, pos = pos)
+    end = 1_000_000
     # pos is :
     #     - not a numpy array
     #     - has values < 0
@@ -98,12 +124,12 @@ def test_input_checks():
     #     - of a different size than first dimention of gm
     #     - containing int values
     #     - unsorted       
-    for pos in [2,  np.array([-4, -3, 0, 1]), np.arange(10).reshape(10//2, 2), 
+    for t_pos in [2,  np.array([-4, -3, 0, 1]), np.arange(10).reshape(10//2, 2), 
                 np.arange(gm.shape[0]-1), np.random.random_sample((gm.shape[0], )), 
                 np.array(np.arange(gm.shape[0])[1:].tolist() + [0])]:
         with pytest.raises(TypeError, match=r"^Incorrect pos format: .*"):
-            simGL.incorporate_monomorphic(gm = gm, pos = pos, start = 0, end = 10_000_000)
-    pos = np.array(ts.tables.sites.position)
+            simGL.incorporate_monomorphic(gm = gm, pos = t_pos, start = 0, end = 10_000_000)
+    pos = np.array([int(v.site.position) for v in ts.variants()])
     # start is :
     #     - < 0
     #     - bigger than start position
@@ -130,7 +156,6 @@ def test_input_checks():
     # GL is :
     #     - not a numpy array (is a list)
     #     - of two dimentions
-    #     - of three dimentions but last has size != 4
     for GL in [[3], np.arange(2*4).reshape(2, 4)]:
         with pytest.raises(TypeError, match=r"^Incorrect GL format: .*"):
             simGL.GL_to_Mm(GL, ploidy)
@@ -138,6 +163,13 @@ def test_input_checks():
     GL = simGL.allelereadcounts_to_GL(arc, e, ploidy)
     with pytest.raises(TypeError, match=r"^Incorrect ploidy format or GL format: .*"):
         simGL.GL_to_Mm(GL, ploidy+1)
+    # alleles_per_site is :
+    #     - not a numpy array (is a list)
+    #     - of one dimention
+    #     - of three dimentions
+    for alleles_per_site in [[3], np.array([3]), np.arange(2*4*3).reshape(2, 4, 3)]:
+        with pytest.raises(TypeError, match=r"^Incorrect alleles_per_site format: .*"):
+            simGL.subset_GL(GL, alleles_per_site, ploidy)
 
 def test_allelereadcounts_to_GL():
     # TODO: proper tests
@@ -146,6 +178,18 @@ def test_allelereadcounts_to_GL():
     arc = simGL.sim_allelereadcounts(gm = ts.genotype_matrix(), mean_depth = 15, std_depth = 2.5, e = 0.05, ploidy = 2, seed = 1234)
     GL  = simGL.allelereadcounts_to_GL(arc = arc, e = 0.05, ploidy = 2)
     assert GL.shape == (ts.num_sites, num_individuals, 10)
+
+def test_Mm_same_as_refalt():
+    # TODO: Make a test that checks that for a big number of coverage the obtained alleles for maximum and minimum is the same as reference and alternative alleles.
+    pass
+
+def test_GL_has_zero():
+    # TODO: Check that all sites for all individuals have a GL that is equal to 0.
+    pass
+
+def test_subset_GL_has_zero():
+    # TODO: Check that all sites for all individuals have a GL that is equal to 0.
+    pass
 
 def allelereadcounts_to_GL_forloop(Rg, e = 0.05):
     GL = []
