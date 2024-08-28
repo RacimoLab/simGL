@@ -231,7 +231,10 @@ def array_combinations_with_replacement(elements, positions):
 def array_combinations(elements, positions):
     return np.array([list(x) for x in combinations(elements, positions)])
 
-def allelereadcounts_to_GL(arc, e, ploidy):
+def normalize_GL(GL):
+    return GL-GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
+
+def allelereadcounts_to_GL(arc, e, ploidy, normalized = True):
     '''
     Computes genotype likelihoods from allele read counts per site per individual. 
     
@@ -246,13 +249,17 @@ def allelereadcounts_to_GL(arc, e, ploidy):
         Sequencing error probability per base pair per site. The value must be between 0 and 1.
 
     ploidy : `int` 
-        Number of haplotypic chromosomes per individual.  
+        Number of haplotypic chromosomes per individual.
+
+    normalized :  `bool`
+        Boolean variable that determines if the output of the function should be normalized. Normalization consists 
+        on substracting the value of the most likely genotype in every genotype per loci and individual.
 
     Returns 
     -------
 
     GL : `numpy.ndarray`
-        Normalized genotype likelihoods per site per individual. The dimentions of the array are (sites, individuals, genotypes). 
+        Negative log genotype likelihoods per site per individual. The dimentions of the array are (sites, individuals, genotypes). 
         The third dimention of the array corresponds to the combinations with replacement of all 4 possible alleles 
         {"A", "C", "G", "T"} (i.e., for a diploid, there are 10 possible genotypes and the combination order is "AA", "AC",
         "AG", "AT", "CC", "CG", ..., "TT"). 
@@ -268,7 +275,9 @@ def allelereadcounts_to_GL(arc, e, ploidy):
     AFxGTxploidy = np.array([(GTxploidy == 0).sum(axis = 1), (GTxploidy == 1).sum(axis = 1), (GTxploidy == 2).sum(axis = 1), (GTxploidy == 3).sum(axis = 1)])/ploidy
     
     GL = np.multiply(-np.log(AFxGTxploidy*(1-e)+(1-AFxGTxploidy)*(e/3)), arc.reshape(arc.shape[0], arc.shape[1], arc.shape[2], 1)).sum(axis = 2)
-    return GL-GL.min(axis = 2).reshape(GL.shape[0], GL.shape[1], 1)
+    if normalized:
+        return normalize_GL(GL)
+    return GL
     
 def get_pGTxMm(ploidy):
     GTxploidy    = array_combinations_with_replacement([0, 1, 2, 3], ploidy)
@@ -321,8 +330,17 @@ def GL_to_Mm(GL, ploidy):
     # TODO: when there are too many individuals, the numeric operation is not sable.
     assert check_ploidy(ploidy) and check_GL(GL, ploidy)
     Mmxploidy = array_combinations([0, 1, 2, 3], ploidy)
-    Mmindex   = get_Mmindex(GL, ploidy)
+    Mmindex   = get_Mmindex(GL+1, ploidy)
     return Mmxploidy[Mmindex]
+
+def sorted_unsorted_allele_combination_correspondance(alleles_per_site, ploidy):
+    unsorted_rows = np.all(np.diff(alleles_per_site) < 0, axis = 1) #check which rows (loci) have alleles which are not in order, and thus, are in the wrong order in GL_subset
+    correspondance = {}
+    for pattern in np.unique(alleles_per_site[unsorted_rows], axis = 0): # Make a dictionary that will for every pattern of alleles make the corresponance of genotype positions according to the order
+        sorted_combination   = [list(x) for x in combinations_with_replacement(np.sort(np.array(pattern)).tolist(), ploidy)]
+        unsorted_combination = [list(x) for x in combinations_with_replacement(np.array(pattern).tolist(), ploidy)]
+        correspondance[tuple(pattern.tolist())] = [j for i in range(len(unsorted_combination)) for j in range(len(sorted_combination)) if np.all(np.isin(sorted_combination[j], unsorted_combination[i])) and np.all(np.isin(unsorted_combination[i], sorted_combination[j]))]
+    return correspondance, unsorted_rows
 
 def subset_GL(GL, alleles_per_site, ploidy):
     '''
@@ -362,7 +380,19 @@ def subset_GL(GL, alleles_per_site, ploidy):
     GTidxxn_loci_bool = ((alleles_per_site.reshape(n_loci, ploidy, 1, 1) == GTxploidy.T.reshape(1, 1, ploidy, n_GL)).sum(axis = 2).sum(axis = 1) == ploidy) # boolean matrix with dimentions (n_loci, n_GL) that encodes which GT positions correspond to the Mm alleles
     dim3 = np.tile(GTidxxn_loci[GTidxxn_loci_bool].reshape(n_loci, -1), n_ind).reshape(-1) #Array with the GT index positions to retrieve, repeated (tiled) as many times as n_ind
 
-    return GL[dim1, dim2, dim3].reshape(n_loci, n_ind, n_genotypes)
+    GL_subset = GL[dim1, dim2, dim3].reshape(n_loci, n_ind, n_genotypes)
+
+    #The GL subset gives the GL sorted according to allele index. So, even though in position x the allels inputed were [2, 1], the genotypes correspond to [[1,1], [1,2], [2,2]] now I need a way of reversing the order
+    
+    correspondance, unsorted_rows = sorted_unsorted_allele_combination_correspondance(alleles_per_site, ploidy) #Make a dictionary that for every pattern of alleles unsorted, tells which index the every genotype is found
+    n_unsorted_rows = unsorted_rows.sum()
+
+    dim1 = np.repeat(np.where(unsorted_rows)[0], n_ind*n_genotypes)
+    dim2 = np.tile(np.repeat(np.arange(n_ind), n_genotypes), n_unsorted_rows)
+    dim3 = np.tile(np.array([correspondance[tuple(x.tolist())] for x in alleles_per_site[unsorted_rows]]), n_ind).reshape(-1)
+
+    GL_subset[unsorted_rows] = GL_subset[dim1, dim2, dim3].reshape(n_unsorted_rows, n_ind, n_genotypes)
+    return GL_subset
 
 def allelereadcounts_to_pileup(arc, output):
     '''
