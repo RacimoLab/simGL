@@ -3,9 +3,10 @@
 .ipynb_checkpoints/
 .Rprofile
 *.lock
-__pycache__
+__pycache__/
 notebook/tmp/*
 simGL.egg-info/
 build/
+docs/_build/
 simGL.code-workspace
 .coverage
