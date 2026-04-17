@@ -299,7 +299,7 @@ def sim_allelereadcounts(gm, mean_depth, e, ploidy, seed = None, std_depth = Non
     err = np.array([[1-e, e/3, e/3, e/3], [e/3, 1-e, e/3, e/3], [e/3, e/3, 1-e, e/3], [e/3, e/3, e/3, 1-e]])
     rng = np.random.default_rng(seed)
     #1. Depths (DP) per haplotype (h)
-    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1], ploidy)
+    DPh = depth_per_haplotype(rng, mean_depth, std_depth, gm.shape[1])
     #2. Sample depths (DP) per site per haplotype
     if depth_type == "independent":
         DP  = independent_depth(rng, DPh, gm.shape)
