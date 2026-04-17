@@ -1,1 +1,1 @@
-from .simGL import incorporate_monomorphic, sim_allelereadcounts, allelereadcounts_to_GL, GL_to_Mm, subset_GL, allelereadcounts_to_pileup
+from .simGL import incorporate_monomorphic, sim_allelereadcounts, allelereadcounts_to_GL, GL_to_Mm, subset_GL, allelereadcounts_to_pileup, normalize_GL, ref_alt_to_index, GL_to_vcf
