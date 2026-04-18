@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "simGL: Simulate genotype likelihoods from haplotypic genotype matrices"
+authors:
+  - family-names: Coll Macià
+    given-names: Moisès
+  - family-names: Gower
+    given-names: Graham
+version: 0.2.0
+date-released: "2026-04-18"
+license: MIT
+doi: 10.5281/zenodo.19637642
+repository-code: "https://github.com/RacimoLab/simGL"
+url: "https://simgl.readthedocs.io"
+keywords:
+  - genotype likelihoods
+  - population genetics
+  - simulation
+  - msprime
+  - tskit

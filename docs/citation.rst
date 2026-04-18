@@ -4,13 +4,11 @@ Citation
 Software
 --------
 
-If you use simGL in published work, please cite the software repository:
+If you use simGL in published work, please cite the software:
 
-    Coll Macià, M. & Gower, G. (2024). *simGL: Simulate genotype likelihoods
-    from haplotypic genotype matrices* (v0.2.0). GitHub.
-    https://github.com/RacimoLab/simGL
-
-A citable Zenodo DOI will be available with the next tagged release.
+    Coll Macià, M. & Gower, G. (2026). *simGL: Simulate genotype likelihoods
+    from haplotypic genotype matrices* (v0.2.0). Zenodo.
+    https://doi.org/10.5281/zenodo.19637642
 
 Methodological references
 --------------------------

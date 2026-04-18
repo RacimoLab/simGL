@@ -70,10 +70,16 @@ available at **https://simgl.readthedocs.io**.
 
 ## Citation
 
-If you use simGL in your work, please cite the relevant methodological papers
-listed in the [Citation page](https://simgl.readthedocs.io/en/latest/citation.html)
+If you use simGL in your work, please cite:
+
+> Coll Macià, M. & Gower, G. (2026). *simGL: Simulate genotype likelihoods
+> from haplotypic genotype matrices* (v0.2.0). Zenodo.
+> https://doi.org/10.5281/zenodo.19637642
+
+Please also cite the methodological papers listed in the
+[Citation page](https://simgl.readthedocs.io/en/latest/citation.html)
 of the documentation.
 
 ## License
 
-[ISC](LICENSE)
+[MIT](LICENSE)
