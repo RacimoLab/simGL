@@ -1,5 +1,8 @@
 # simGL
 
+[![PyPI](https://img.shields.io/pypi/v/simGL)](https://pypi.org/project/simGL/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19637642.svg)](https://doi.org/10.5281/zenodo.19637642)
+
 **simGL** simulates genotype likelihoods (GLs) from haplotypic genotype matrices,
 given per-sample coverage and sequencing error rates.
 It is designed to work seamlessly with
