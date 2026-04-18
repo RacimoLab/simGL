@@ -15,6 +15,13 @@ From PyPI
 
    pip install simGL
 
+From conda-forge
+----------------
+
+.. code-block:: bash
+
+   conda install -c conda-forge simGL
+
 From source (development)
 --------------------------
 

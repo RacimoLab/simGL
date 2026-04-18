@@ -15,6 +15,12 @@ pipelines, but accepts any NumPy haplotype matrix.
 pip install simGL
 ```
 
+Or via conda:
+
+```bash
+conda install -c conda-forge simGL
+```
+
 Or from source:
 
 ```bash
